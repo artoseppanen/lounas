@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tampereen Lounas — konseptidemo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --ink: #1c2b24;
+    --paper: #f6f3ec;
+    --accent: #a3502f;
+    --accent-soft: #e7d9c9;
+    --line: #d8d0c0;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 {
+    margin: 0 0 2px;
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    font-size: 13px;
+    color: #5b6a61;
+  }
+  .tabs {
+    display: flex;
+    gap: 6px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tab {
+    flex: 1;
+    padding: 9px 0;
+    text-align: center;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .tab.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .count {
+    padding: 8px 16px;
+    font-size: 12.5px;
+    color: #5b6a61;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .count b { color: var(--ink); }
+  .status { font-size: 11.5px; color: #93998f; width: 100%; }
+  main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  #map {
+    position: absolute;
+    inset: 0;
+  }
+  #listView {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    padding: 4px 16px 16px;
+    display: none;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .card:active { background: var(--accent-soft); }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .card h3 {
+    margin: 0;
+    font-size: 15.5px;
+  }
+  .genre {
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .addr {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: #5b6a61;
+  }
+  .osmtag {
+    margin-top: 6px;
+    font-size: 10.5px;
+    color: #93998f;
+    font-family: monospace;
+  }
+  .leaflet-popup-content h3 {
+    margin: 0 0 3px;
+    font-size: 14px;
+  }
+  .leaflet-popup-content .genre {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .fav {
+    float: right;
+    font-size: 16px;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tampereen Lounas</h1>
+  <p>Konseptidemo — OSM-data, esimerkkiravintolat</p>
+</header>
+
+<div class="tabs">
+  <div class="tab active" id="tabMap">Kartta</div>
+  <div class="tab" id="tabList">Lista</div>
+</div>
+
+<div class="count">
+  <b id="countNum">0</b> ravintolaa näkyvissä
+  <span id="status" class="status"></span>
+</div>
+
+<main>
+  <div id="map"></div>
+  <div id="listView"></div>
+</main>
+
+<script>
+// Oikea Overpass-haku. Julkinen, avoin rajapinta, ei API-avainta.
+// HUOM tuotannossa: älä anna sovelluksen jokaisen käyttäjän kutsua julkista
+// overpass-api.de -instanssia suoraan (usage policy kieltää raskaan pollauksen).
+// Aja tämä oman backendin kautta, joka välimuistittaa vastaukset esim. tunniksi.
+const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+
+// Koko Tampereen kattava kiinteä alue — haetaan kerran, kun sovellus avataan.
+// Ei sidottu näkyvään karttarajaukseen, joten pan/zoom ei enää koskaan laukaise uutta hakua.
+const TAMPERE_BBOX = { s: 61.435, w: 23.640, n: 61.560, e: 23.900 };
+
+let restaurants = [];
+
+function buildQuery(bbox) {
+  const box = `${bbox.s},${bbox.w},${bbox.n},${bbox.e}`;
+  return `[out:json][timeout:40];
+(
+  node["amenity"~"^(restaurant|cafe|fast_food)$"](${box});
+  way["amenity"~"^(restaurant|cafe|fast_food)$"](${box});
+  relation["amenity"~"^(restaurant|cafe|fast_food)$"](${box});
+);
+out center tags;`;
+}
+
+function elementToRestaurant(el) {
+  const lat = el.lat ?? el.center?.lat;
+  const lon = el.lon ?? el.center?.lon;
+  const tags = el.tags || {};
+  const street = tags["addr:street"];
+  const num = tags["addr:housenumber"];
+  return {
+    id: `${el.type}/${el.id}`,
+    lat, lon,
+    name: tags.name || "Nimetön kohde",
+    cuisine: tags.cuisine ? tags.cuisine.replace(/_/g, " ").replace(/;/g, ", ") : "genre ei tiedossa",
+    addr: street ? `${street}${num ? " " + num : ""}` : ""
+  };
+}
+
+async function loadAllRestaurantsOnce() {
+  const status = document.getElementById('status');
+  status.textContent = "Haetaan Tampereen ravintolat…";
+  try {
+    const query = buildQuery(TAMPERE_BBOX);
+    const res = await fetch(OVERPASS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "data=" + encodeURIComponent(query)
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    restaurants = data.elements
+      .map(elementToRestaurant)
+      .filter(r => r.lat && r.lon);
+    rebuildMarkers();
+    updateCount();
+    renderList();
+    const now = new Date().toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' });
+    status.textContent = `${restaurants.length} ravintolaa ladattu klo ${now} · ei enää uusia hakuja tällä käynnistyskerralla`;
+  } catch (err) {
+    status.textContent = "Haku epäonnistui: " + err.message;
+  }
+}
+
+function rebuildMarkers() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  for (const k in markers) delete markers[k];
+  restaurants.forEach(r => {
+    const marker = L.marker([r.lat, r.lon]).addTo(map);
+    marker.bindPopup(popupHtml(r));
+    markers[r.id] = marker;
+  });
+}
+
+const favorites = new Set(JSON.parse(sessionStorage.getItem('favs') || '[]').length ? JSON.parse(sessionStorage.getItem('favs')) : []);
+
+function saveFavs() {
+  try { sessionStorage.setItem('favs', JSON.stringify([...favorites])); } catch(e) {}
+}
+
+const map = L.map('map', { zoomControl: true }).setView([61.4978, 23.7610], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap-tekijät'
+}).addTo(map);
+
+const markers = {};
+
+function popupHtml(r) {
+  const isFav = favorites.has(r.id);
+  return `<h3>${r.name}</h3>
+    <span class="genre">${r.cuisine}</span>
+    <div class="addr">${r.addr}</div>
+    <button class="fav" onclick="toggleFav(${r.id})">${isFav ? '★ Suosikki' : '☆ Lisää suosikiksi'}</button>`;
+}
+
+function toggleFav(id) {
+  if (favorites.has(id)) favorites.delete(id); else favorites.add(id);
+  saveFavs();
+  markers[id].setPopupContent(popupHtml(restaurants.find(r => r.id === id)));
+  renderList();
+}
+window.toggleFav = toggleFav;
+
+function visibleRestaurants() {
+  const b = map.getBounds();
+  return restaurants.filter(r => b.contains([r.lat, r.lon]));
+}
+
+function updateCount() {
+  document.getElementById('countNum').textContent = visibleRestaurants().length;
+}
+
+function renderList() {
+  const el = document.getElementById('listView');
+  const visible = visibleRestaurants();
+  el.innerHTML = visible.map(r => `
+    <div class="card" onclick="focusOnMap(${r.id})">
+      <div class="card-top">
+        <h3>${r.name}</h3>
+        <span>${favorites.has(r.id) ? '★' : ''}</span>
+      </div>
+      <span class="genre">${r.cuisine}</span>
+      <p class="addr">${r.addr}</p>
+      <p class="osmtag">amenity=restaurant · cuisine=${r.cuisine}</p>
+    </div>
+  `).join('') || '<p style="color:#93998f;font-size:13px;">Ei ravintoloita näkyvällä alueella. Zoomaa ulos.</p>';
+}
+
+function focusOnMap(id) {
+  const r = restaurants.find(x => x.id === id);
+  map.setView([r.lat, r.lon], 16);
+  showTab('map');
+  setTimeout(() => markers[id].openPopup(), 300);
+}
+window.focusOnMap = focusOnMap;
+
+map.on('moveend zoomend', () => { updateCount(); renderList(); });
+
+function showTab(which) {
+  const mapTab = document.getElementById('tabMap');
+  const listTab = document.getElementById('tabList');
+  const mapEl = document.getElementById('map');
+  const listEl = document.getElementById('listView');
+  if (which === 'map') {
+    mapTab.classList.add('active'); listTab.classList.remove('active');
+    mapEl.style.display = 'block'; listEl.style.display = 'none';
+    setTimeout(() => map.invalidateSize(), 50);
+  } else {
+    listTab.classList.add('active'); mapTab.classList.remove('active');
+    mapEl.style.display = 'none'; listEl.style.display = 'block';
+  }
+}
+document.getElementById('tabMap').onclick = () => showTab('map');
+document.getElementById('tabList').onclick = () => showTab('list');
+
+updateCount();
+renderList();
+loadAllRestaurantsOnce();
+</script>
+</body>
+</html>
