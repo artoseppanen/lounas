@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tampereen Lounas — konseptidemo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --ink: #1c2b24;
+    --paper: #f6f3ec;
+    --accent: #a3502f;
+    --accent-soft: #e7d9c9;
+    --line: #d8d0c0;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  header {
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+  main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  #map {
+    position: absolute;
+    inset: 0;
+  }
+  #listView, #favView {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    display: none;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Listanäkymän oma yläpalkki: suodatinvalinta + laskuri */
+  .list-toolbar {
+    position: sticky;
+    top: 0;
+    background: var(--paper);
+    padding: 10px 16px 8px;
+    border-bottom: 1px solid var(--line);
+    z-index: 5;
+  }
+  .segment {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .seg-btn {
+    flex: 1;
+    padding: 7px 0;
+    text-align: center;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 13px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .seg-btn.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .list-count {
+    font-size: 12.5px;
+    color: #5b6a61;
+  }
+  .list-count b { color: var(--ink); }
+  .list-count .status { color: #93998f; }
+
+  #listCards, #favView { padding-left: 16px; padding-right: 16px; }
+  #listCards { padding-top: 10px; }
+  #favView { padding-top: 14px; }
+
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .card:active { background: var(--accent-soft); }
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .card h3 {
+    margin: 0;
+    font-size: 15.5px;
+  }
+  .genre {
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .addr {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: #5b6a61;
+  }
+  .empty-hint {
+    color: #93998f;
+    font-size: 13px;
+    padding: 4px 0 16px;
+  }
+  .leaflet-popup-content h3 {
+    margin: 0 0 3px;
+    font-size: 14px;
+  }
+  .leaflet-popup-content .genre {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .popup-actions, .card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .heart {
+    background: none;
+    border: none;
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px;
+    cursor: pointer;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .stars { display: inline-flex; gap: 1px; }
+  .star {
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--accent);
+  }
+  .leaflet-popup-content { margin: 10px 12px; }
+  .leaflet-popup-content-wrapper { max-width: 240px; }
+
+  /* Kelluva pohjanavigaatio kartan päällä */
+  .bottom-nav {
+    position: fixed;
+    left: 15px;
+    right: 15px;
+    bottom: calc(15px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    background: rgba(255,255,255,0.94);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    box-shadow: 0 6px 20px rgba(28,43,36,0.15);
+    z-index: 1000;
+  }
+  .navtab {
+    flex: 1;
+    padding: 10px 0;
+    text-align: center;
+    border-radius: 999px;
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .navtab.active {
+    background: var(--ink);
+    color: var(--paper);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tampereen Lounas</h1>
+</header>
+
+<main>
+  <div id="map"></div>
+
+  <div id="listView">
+    <div class="list-toolbar">
+      <div class="segment">
+        <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
+        <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
+      </div>
+      <div class="list-count">
+        <b id="countNum">0</b> <span id="countLabel">ravintolaa näkyvissä</span>
+        · <span id="status" class="status"></span>
+      </div>
+    </div>
+    <div id="listCards"></div>
+  </div>
+
+  <div id="favView"></div>
+</main>
+
+<nav class="bottom-nav">
+  <div class="navtab active" id="tabMap">Kartta</div>
+  <div class="navtab" id="tabList">Lista</div>
+  <div class="navtab" id="tabFav">♥ (0)</div>
+</nav>
+
+<script>
+// Oikea Overpass-haku. Julkinen, avoin rajapinta, ei API-avainta.
+// HUOM tuotannossa: älä anna sovelluksen jokaisen käyttäjän kutsua julkista
+// overpass-api.de -instanssia suoraan (usage policy kieltää raskaan pollauksen).
+// Aja tämä oman backendin kautta, joka välimuistittaa vastaukset esim. tunniksi.
+const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+
+// Koko Tampereen kattava kiinteä alue — haetaan kerran, kun sovellus avataan.
+// Ei sidottu näkyvään karttarajaukseen, joten pan/zoom ei enää koskaan laukaise uutta hakua.
+const TAMPERE_BBOX = { s: 61.435, w: 23.640, n: 61.560, e: 23.900 };
+
+let restaurants = [];
+let listFilterMode = 'visible'; // 'visible' | 'all'
+let currentTab = 'map';
+
+function buildQuery(bbox) {
+  const box = `${bbox.s},${bbox.w},${bbox.n},${bbox.e}`;
+  return `[out:json][timeout:40];
+(
+  node["amenity"~"^(restaurant|cafe|fast_food)$"](${box});
+  way["amenity"~"^(restaurant|cafe|fast_food)$"](${box});
+  relation["amenity"~"^(restaurant|cafe|fast_food)$"](${box});
+);
+out center tags;`;
+}
+
+function elementToRestaurant(el) {
+  const lat = el.lat ?? el.center?.lat;
+  const lon = el.lon ?? el.center?.lon;
+  const tags = el.tags || {};
+  const street = tags["addr:street"];
+  const num = tags["addr:housenumber"];
+  return {
+    id: `${el.type}/${el.id}`,
+    lat, lon,
+    name: tags.name || "Nimetön kohde",
+    cuisine: tags.cuisine ? tags.cuisine.replace(/_/g, " ").replace(/;/g, ", ") : "genre ei tiedossa",
+    addr: street ? `${street}${num ? " " + num : ""}` : ""
+  };
+}
+
+async function loadAllRestaurantsOnce() {
+  const status = document.getElementById('status');
+  status.textContent = "haetaan…";
+  try {
+    const query = buildQuery(TAMPERE_BBOX);
+    const res = await fetch(OVERPASS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "data=" + encodeURIComponent(query)
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    restaurants = data.elements
+      .map(elementToRestaurant)
+      .filter(r => r.lat && r.lon);
+    rebuildMarkers();
+    updateHeaderInfo();
+    renderList();
+    renderFavorites();
+    updateFavTabLabel();
+    const now = new Date().toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' });
+    status.textContent = `ladattu klo ${now}`;
+  } catch (err) {
+    status.textContent = "haku epäonnistui: " + err.message;
+  }
+}
+
+function rebuildMarkers() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  for (const k in markers) delete markers[k];
+  restaurants.forEach(r => {
+    const marker = L.marker([r.lat, r.lon]).addTo(map);
+    marker.bindPopup(popupHtml(r), { maxWidth: 240, minWidth: 190 });
+    markers[r.id] = marker;
+  });
+}
+
+// userData tallentaa per-ravintola suosikkitilan JA 1-5 tähden arvostelun.
+// localStorage säilyy selaimen sulkemisen ylikin.
+let userData = {};
+try {
+  userData = JSON.parse(localStorage.getItem('tampereLounasUserData') || '{}');
+} catch (e) {
+  userData = {};
+}
+function saveUserData() {
+  try { localStorage.setItem('tampereLounasUserData', JSON.stringify(userData)); } catch (e) {}
+}
+function isFav(id) { return !!(userData[id] && userData[id].fav); }
+function getRating(id) { return (userData[id] && userData[id].rating) || 0; }
+
+const map = L.map('map', { zoomControl: true }).setView([61.4978, 23.7610], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap-tekijät'
+}).addTo(map);
+
+const markers = {};
+
+function starsHtml(id) {
+  const rating = getRating(id);
+  let html = '';
+  for (let i = 1; i <= 5; i++) {
+    html += `<span class="star" onclick="event.stopPropagation(); setRating('${id}', ${i})">${rating >= i ? '★' : '☆'}</span>`;
+  }
+  return `<span class="stars">${html}</span>`;
+}
+
+function heartHtml(id) {
+  const fav = isFav(id);
+  return `<button class="heart" onclick="event.stopPropagation(); toggleFav('${id}')" aria-label="${fav ? 'Poista suosikeista' : 'Lisää suosikiksi'}">${fav ? '♥' : '♡'}</button>`;
+}
+
+function popupHtml(r) {
+  return `<h3>${r.name}</h3>
+    <span class="genre">${r.cuisine}</span>
+    <div class="addr">${r.addr}</div>
+    <div class="popup-actions">
+      ${starsHtml(r.id)}
+      ${heartHtml(r.id)}
+    </div>`;
+}
+
+function toggleFav(id) {
+  userData[id] = userData[id] || {};
+  userData[id].fav = !userData[id].fav;
+  saveUserData();
+  refreshAfterUserAction(id);
+}
+window.toggleFav = toggleFav;
+
+function setRating(id, val) {
+  userData[id] = userData[id] || {};
+  userData[id].rating = (userData[id].rating === val) ? 0 : val;
+  saveUserData();
+  refreshAfterUserAction(id);
+}
+window.setRating = setRating;
+
+function refreshAfterUserAction(id) {
+  if (markers[id]) markers[id].setPopupContent(popupHtml(restaurants.find(r => r.id === id)));
+  renderList();
+  renderFavorites();
+  updateFavTabLabel();
+}
+
+function visibleRestaurants() {
+  const b = map.getBounds();
+  return restaurants.filter(r => b.contains([r.lat, r.lon]));
+}
+
+function currentListRestaurants() {
+  return listFilterMode === 'all' ? restaurants : visibleRestaurants();
+}
+
+function updateHeaderInfo() {
+  const countEl = document.getElementById('countNum');
+  const labelEl = document.getElementById('countLabel');
+  const list = currentListRestaurants();
+  countEl.textContent = list.length;
+  labelEl.textContent = listFilterMode === 'all' ? "ravintolaa yhteensä" : "ravintolaa näkyvissä";
+}
+
+function updateFavTabLabel() {
+  const count = restaurants.filter(r => isFav(r.id)).length;
+  document.getElementById('tabFav').textContent = `♥ (${count})`;
+}
+
+function cardHtml(r) {
+  return `
+    <div class="card" onclick="focusOnMap('${r.id}')">
+      <div class="card-top">
+        <h3>${r.name}</h3>
+      </div>
+      <span class="genre">${r.cuisine}</span>
+      <p class="addr">${r.addr}</p>
+      <div class="card-actions">
+        ${starsHtml(r.id)}
+        ${heartHtml(r.id)}
+      </div>
+    </div>
+  `;
+}
+
+function renderList() {
+  const el = document.getElementById('listCards');
+  const list = currentListRestaurants();
+  el.innerHTML = list.map(cardHtml).join('') || '<p class="empty-hint">Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.</p>';
+  updateHeaderInfo();
+}
+
+function renderFavorites() {
+  const el = document.getElementById('favView');
+  const favs = restaurants
+    .filter(r => isFav(r.id))
+    .sort((a, b) => getRating(b.id) - getRating(a.id) || a.name.localeCompare(b.name, 'fi'));
+  el.innerHTML = favs.map(cardHtml).join('') || '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
+}
+
+function focusOnMap(id) {
+  const r = restaurants.find(x => x.id === id);
+  if (!r) return;
+  // Vaihdetaan ensin kartta näkyviin (ja invalidateSize), koska Leafletin setView
+  // piirtyy väärin jos karttaelementti on vielä display:none kutsuhetkellä —
+  // tämä oli syy siihen ettei kortista pääsyt kartalle.
+  showTab('map');
+  setTimeout(() => {
+    map.invalidateSize();
+    map.setView([r.lat, r.lon], 16);
+    if (markers[id]) markers[id].openPopup();
+  }, 60);
+}
+window.focusOnMap = focusOnMap;
+
+map.on('moveend zoomend', () => {
+  if (listFilterMode === 'visible') renderList();
+  else updateHeaderInfo();
+});
+
+function showTab(which) {
+  currentTab = which;
+  document.getElementById('tabMap').classList.toggle('active', which === 'map');
+  document.getElementById('tabList').classList.toggle('active', which === 'list');
+  document.getElementById('tabFav').classList.toggle('active', which === 'fav');
+  document.getElementById('map').style.display = which === 'map' ? 'block' : 'none';
+  document.getElementById('listView').style.display = which === 'list' ? 'block' : 'none';
+  document.getElementById('favView').style.display = which === 'fav' ? 'block' : 'none';
+
+  if (which === 'map') setTimeout(() => map.invalidateSize(), 50);
+  if (which === 'list') renderList();
+  if (which === 'fav') renderFavorites();
+}
+document.getElementById('tabMap').onclick = () => showTab('map');
+document.getElementById('tabList').onclick = () => showTab('list');
+document.getElementById('tabFav').onclick = () => showTab('fav');
+
+document.getElementById('filterVisible').onclick = () => {
+  listFilterMode = 'visible';
+  document.getElementById('filterVisible').classList.add('active');
+  document.getElementById('filterAll').classList.remove('active');
+  renderList();
+};
+document.getElementById('filterAll').onclick = () => {
+  listFilterMode = 'all';
+  document.getElementById('filterAll').classList.add('active');
+  document.getElementById('filterVisible').classList.remove('active');
+  renderList();
+};
+
+renderList();
+updateFavTabLabel();
+loadAllRestaurantsOnce();
+</script>
+</body>
+</html>
