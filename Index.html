@@ -190,8 +190,9 @@
     font-size: 12.5px;
     color: #5b6a61;
   }
-  .hours.hours-unknown {
-    color: #767676;
+  .hours.hours-warning {
+    color: var(--accent);
+    font-weight: 500;
   }
   .empty-hint {
     color: #93998f;
@@ -682,11 +683,87 @@ function heartHtml(id) {
   return `<button class="heart" onclick="event.stopPropagation(); toggleFav('${id}')" aria-label="${fav ? 'Poista suosikeista' : 'Lisää suosikiksi'}">${fav ? '♥' : '♡'}</button>`;
 }
 
-function openingHoursHtml(r) {
-  if (!r.openingHours) {
-    return `<p class="hours hours-unknown">Aukioloajat ei tiedossa</p>`;
+// Karkea OSM opening_hours -tulkinta: etsii arkipäivän (ma-pe) aikaisimman
+// aukeamisajan. Palauttaa true jos aukeaa klo 12 tai myöhemmin (ei todennäköisesti
+// auki lounasaikaan), false jos aukeaa klo 11 mennessä jonain arkipäivänä, ja
+// null jos tietoa ei ole tai syntaksi on liian monimutkainen tulkittavaksi
+// luotettavasti (jolloin emme näytä mitään väitettä).
+const WEEKDAY_CODES = ['Mo', 'Tu', 'We', 'Th', 'Fr'];
+const DAY_ORDER = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+
+function expandDayToken(token) {
+  if (token.includes('-')) {
+    const [a, b] = token.split('-');
+    const ai = DAY_ORDER.indexOf(a), bi = DAY_ORDER.indexOf(b);
+    if (ai === -1 || bi === -1) return [];
+    const days = [];
+    let i = ai;
+    while (true) {
+      days.push(DAY_ORDER[i]);
+      if (i === bi) break;
+      i = (i + 1) % 7;
+    }
+    return days;
   }
-  return `<p class="hours">Aukioloajat: ${r.openingHours}</p>`;
+  return DAY_ORDER.includes(token) ? [token] : [];
+}
+
+function parseTimeToMinutes(t) {
+  const m = t.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function weekdayOpensLateOrUnknown(openingHours) {
+  if (!openingHours) return null;
+  const oh = openingHours.trim();
+  if (/^24\/7$/i.test(oh)) return false;
+
+  const rules = oh.split(';').map(s => s.trim()).filter(Boolean);
+  let sawWeekdayRule = false;
+  let earliestStart = null;
+  let anyWeekdayClosedAllDay = false;
+
+  for (const rule of rules) {
+    const match = rule.match(/^([A-Za-z,\-]+)\s+(.+)$/);
+    if (!match) continue;
+    const dayPart = match[1];
+    const timePart = match[2].trim();
+    if (/^PH$|^SH$/i.test(dayPart)) continue;
+
+    let days = [];
+    dayPart.split(',').forEach(g => {
+      if (/^PH$|^SH$/i.test(g)) return;
+      days = days.concat(expandDayToken(g));
+    });
+    const weekdaysInRule = days.filter(d => WEEKDAY_CODES.includes(d));
+    if (weekdaysInRule.length === 0) continue;
+    sawWeekdayRule = true;
+
+    if (/^off$|^closed$/i.test(timePart)) {
+      anyWeekdayClosedAllDay = true;
+      continue;
+    }
+
+    timePart.split(',').forEach(range => {
+      const startMatch = range.match(/^(\d{1,2}:\d{2})/);
+      if (!startMatch) return;
+      const startMin = parseTimeToMinutes(startMatch[1]);
+      if (startMin === null) return;
+      if (earliestStart === null || startMin < earliestStart) earliestStart = startMin;
+    });
+  }
+
+  if (!sawWeekdayRule) return null;
+  if (earliestStart === null) return anyWeekdayClosedAllDay ? true : null;
+  return earliestStart >= 12 * 60;
+}
+
+function openingHoursHtml(r) {
+  if (weekdayOpensLateOrUnknown(r.openingHours) === true) {
+    return `<p class="hours hours-warning">Ei auki lounasaikaan</p>`;
+  }
+  return '';
 }
 
 function normalizeUrl(url) {
