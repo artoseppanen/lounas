@@ -156,6 +156,64 @@
   .list-count b { color: var(--ink); }
   .list-count .status { color: #93998f; }
 
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .search-wrap {
+    position: relative;
+    margin: 12px 0;
+  }
+  .name-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 56px 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 13.5px;
+    background: #fff;
+    color: var(--ink);
+  }
+  .name-search:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .name-search::-webkit-search-cancel-button { display: none; }
+  .search-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #93998f;
+    pointer-events: none;
+  }
+  .search-clear {
+    display: none;
+    position: absolute;
+    right: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .search-clear.visible { display: flex; }
+
   #listCards, #favView { padding-left: 16px; padding-right: 16px; }
   #listCards { padding-top: 10px; }
   #favView { padding-top: 14px; }
@@ -593,6 +651,15 @@
             <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
             <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
           </div>
+          <div class="search-wrap">
+            <label for="nameSearch" class="visually-hidden">Hae ravintolaa nimellä</label>
+            <input type="search" id="nameSearch" class="name-search" placeholder="Hae ravintolaa nimellä" autocomplete="off">
+            <button type="button" class="search-clear" id="searchClear" aria-label="Tyhjennä haku">×</button>
+            <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
+              <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
           <div class="list-count">
             <b id="countNum">0</b> <span id="countLabel">ravintolaa näkyvissä</span>
             <span id="status" class="status"></span>
@@ -792,8 +859,7 @@ async function loadAllRestaurantsOnce() {
     renderFavorites();
     updateFavTabLabel();
     setLoadingBanner('done');
-    const now = new Date().toLocaleTimeString('fi-FI', { hour: '2-digit', minute: '2-digit' });
-    status.textContent = `· ladattu klo ${now}`;
+    status.textContent = "";
   } catch (err) {
     setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
     status.textContent = "";
@@ -814,7 +880,12 @@ function rebuildMarkers() {
 // Aktiiviset suodattimet.
 const activeFilters = { types: new Set(), minRatingAvg: 0, minRatingOwn: 0, openNow: false, lunchRunning: false };
 
+// Nopea nimihaku listasuodattimien alla. Suodattaa vasta kun kirjoitettu
+// vähintään 2 merkkiä, pienellä viiveellä ettei jokainen näppäily hae erikseen.
+let nameQuery = '';
+
 function matchesFilters(r) {
+  if (nameQuery.length >= 2 && !r.name.toLowerCase().includes(nameQuery)) return false;
   if (activeFilters.minRatingAvg > 0 && getCommunityAvg(r.id) < activeFilters.minRatingAvg) return false;
   if (activeFilters.minRatingOwn > 0 && getRating(r.id) < activeFilters.minRatingOwn) return false;
   if (activeFilters.types.size > 0) {
@@ -1286,6 +1357,33 @@ document.getElementById('sidebarCollapseBtn').onclick = () => {
 // Leaflet tarvitsee invalidateSize() kun kartan säiliön koko muuttuu, esim.
 // kun ikkuna resataan mobiili- ja työpöytäleveyden yli (sivupalkki ilmestyy/katoaa).
 window.addEventListener('resize', () => map.invalidateSize());
+
+let nameSearchTimer = null;
+const nameSearchInput = document.getElementById('nameSearch');
+const searchClearBtn = document.getElementById('searchClear');
+
+nameSearchInput.addEventListener('input', (e) => {
+  const val = e.target.value;
+  searchClearBtn.classList.toggle('visible', val.length > 0);
+  clearTimeout(nameSearchTimer);
+  nameSearchTimer = setTimeout(() => {
+    nameQuery = val.trim().toLowerCase();
+    applyFiltersToMap();
+    renderList();
+    renderFavorites();
+  }, 100);
+});
+
+searchClearBtn.onclick = () => {
+  nameSearchInput.value = '';
+  searchClearBtn.classList.remove('visible');
+  clearTimeout(nameSearchTimer);
+  nameQuery = '';
+  applyFiltersToMap();
+  renderList();
+  renderFavorites();
+  nameSearchInput.focus();
+};
 
 document.getElementById('filterVisible').onclick = () => {
   listFilterMode = 'visible';
