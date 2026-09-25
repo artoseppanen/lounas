@@ -9,7 +9,7 @@
 <style>
   :root {
     --ink: #1c2b24;
-    --paper: #f6f3ec;
+    --paper: #ffffff;
     --accent: #a3502f;
     --accent-soft: #e7d9c9;
     --line: #d8d0c0;
@@ -99,6 +99,13 @@
     display: none;
     padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
   }
+  @media (max-width: 989px) {
+    #map, #listView, #favView { display: none; }
+    #map.m-active, #listView.m-active, #favView.m-active { display: block; }
+  }
+  #sidebar, #mapWrap, .sidebar-inner { display: contents; }
+  .sidebar-tabs { display: none; }
+  .sidebar-collapse-btn { display: none; }
 
   /* Listanäkymän oma yläpalkki: suodatinvalinta + laskuri */
   .list-toolbar {
@@ -369,6 +376,112 @@
     border: none;
     color: var(--paper);
   }
+  .filter-backdrop { display: none; }
+
+  /* ===== Työpöytäversio (>=990px): pysyvä 400px sivupalkki + tumma overlay suodattimille ===== */
+  @media (min-width: 990px) {
+    main {
+      display: flex;
+      flex-direction: row;
+    }
+    #sidebar {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      width: 400px;
+      flex-shrink: 0;
+      height: 100%;
+      border-right: 1px solid var(--line);
+      background: var(--paper);
+      overflow: hidden;
+      transition: width 0.2s ease;
+    }
+    #sidebar.collapsed { width: 44px; }
+    .sidebar-inner {
+      display: flex;
+      flex-direction: column;
+      width: 400px;
+      height: 100%;
+      flex-shrink: 0;
+    }
+    #sidebar.collapsed .sidebar-inner { display: none; }
+    .sidebar-collapse-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      top: 12px;
+      right: 10px;
+      width: 28px;
+      height: 28px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      cursor: pointer;
+      z-index: 5;
+    }
+    #sidebar.collapsed .sidebar-collapse-btn { right: 8px; }
+    .sidebar-collapse-btn svg { transition: transform 0.2s ease; }
+    #sidebar.collapsed .sidebar-collapse-btn svg { transform: scaleX(-1); }
+    #mapWrap {
+      display: block;
+      position: relative;
+      flex: 1;
+      height: 100%;
+    }
+    #map {
+      position: absolute;
+      inset: 0;
+      display: block;
+    }
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+      padding-right: 48px;
+    }
+    .sidebar-tab {
+      flex: 1;
+      padding: 16px 0 13px;
+      text-align: center;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      font-size: 15px;
+      color: #5b6a61;
+      cursor: pointer;
+    }
+    .sidebar-tab.active {
+      color: var(--ink);
+      font-weight: 600;
+      border-bottom-color: var(--accent);
+    }
+    #listView, #favView {
+      position: static;
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding-bottom: 16px;
+    }
+    #listView.d-active, #favView.d-active { display: block; }
+
+    .bottom-nav { display: none; }
+
+    .filter-overlay {
+      left: auto;
+      right: 0;
+      width: 400px;
+      border-left: 1px solid var(--line);
+    }
+    .filter-backdrop.open {
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 20, 20, 0.45);
+      z-index: 1999;
+    }
+  }
 </style>
 </head>
 <body>
@@ -391,23 +504,40 @@
 </div>
 
 <main>
-  <div id="map"></div>
+  <div id="sidebar">
+    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="Pienennä lista-palkki">
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1.5" y="2.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.4"/>
+        <line x1="7.5" y1="2.5" x2="7.5" y2="17.5" stroke="currentColor" stroke-width="1.4"/>
+      </svg>
+    </button>
+    <div class="sidebar-inner" id="sidebarInner">
+      <div class="sidebar-tabs" id="sidebarTabs">
+        <button class="sidebar-tab active" id="sbTabList">Lista</button>
+        <button class="sidebar-tab" id="sbTabFav">Suosikit</button>
+      </div>
 
-  <div id="listView">
-    <div class="list-toolbar">
-      <div class="segment">
-        <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
-        <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
+      <div id="listView">
+        <div class="list-toolbar">
+          <div class="segment">
+            <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
+            <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
+          </div>
+          <div class="list-count">
+            <b id="countNum">0</b> <span id="countLabel">ravintolaa näkyvissä</span>
+            · <span id="status" class="status"></span>
+          </div>
+        </div>
+        <div id="listCards"></div>
       </div>
-      <div class="list-count">
-        <b id="countNum">0</b> <span id="countLabel">ravintolaa näkyvissä</span>
-        · <span id="status" class="status"></span>
-      </div>
+
+      <div id="favView"></div>
     </div>
-    <div id="listCards"></div>
   </div>
 
-  <div id="favView"></div>
+  <div id="mapWrap">
+    <div id="map"></div>
+  </div>
 </main>
 
 <nav class="bottom-nav">
@@ -416,6 +546,7 @@
   <div class="navtab" id="tabFav">♥ (0)</div>
 </nav>
 
+<div class="filter-backdrop" id="filterBackdrop"></div>
 <div class="filter-overlay" id="filterOverlay">
   <div class="filter-topbar">
     <h2>Suodata</h2>
@@ -832,6 +963,7 @@ function updateHeaderInfo() {
 function updateFavTabLabel() {
   const count = restaurants.filter(r => isFav(r.id)).length;
   document.getElementById('tabFav').textContent = `♥ (${count})`;
+  document.getElementById('sbTabFav').textContent = `Suosikit (${count})`;
 }
 
 function cardHtml(r) {
@@ -892,9 +1024,9 @@ function showTab(which) {
   document.getElementById('tabMap').classList.toggle('active', which === 'map');
   document.getElementById('tabList').classList.toggle('active', which === 'list');
   document.getElementById('tabFav').classList.toggle('active', which === 'fav');
-  document.getElementById('map').style.display = which === 'map' ? 'block' : 'none';
-  document.getElementById('listView').style.display = which === 'list' ? 'block' : 'none';
-  document.getElementById('favView').style.display = which === 'fav' ? 'block' : 'none';
+  document.getElementById('map').classList.toggle('m-active', which === 'map');
+  document.getElementById('listView').classList.toggle('m-active', which === 'list');
+  document.getElementById('favView').classList.toggle('m-active', which === 'fav');
 
   if (which === 'map') setTimeout(() => map.invalidateSize(), 50);
   if (which === 'list') renderList();
@@ -903,6 +1035,29 @@ function showTab(which) {
 document.getElementById('tabMap').onclick = () => showTab('map');
 document.getElementById('tabList').onclick = () => showTab('list');
 document.getElementById('tabFav').onclick = () => showTab('fav');
+
+// Työpöytäversion pysyvän sivupalkin Lista/Suosikit-vaihto (erillinen tila
+// mobiilin currentTab-muuttujasta, jotta molemmat toimivat itsenäisesti ikkunan
+// koosta riippumatta, ilman resize-kuuntelijaa CSS:n hoitaessa loput).
+function showSidebarTab(which) {
+  document.getElementById('sbTabList').classList.toggle('active', which === 'list');
+  document.getElementById('sbTabFav').classList.toggle('active', which === 'fav');
+  document.getElementById('listView').classList.toggle('d-active', which === 'list');
+  document.getElementById('favView').classList.toggle('d-active', which === 'fav');
+  if (which === 'list') renderList();
+  if (which === 'fav') renderFavorites();
+}
+document.getElementById('sbTabList').onclick = () => showSidebarTab('list');
+document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
+
+document.getElementById('sidebarCollapseBtn').onclick = () => {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+  setTimeout(() => map.invalidateSize(), 210); // odotetaan CSS-transitionin loppuminen
+};
+
+// Leaflet tarvitsee invalidateSize() kun kartan säiliön koko muuttuu, esim.
+// kun ikkuna resataan mobiili- ja työpöytäleveyden yli (sivupalkki ilmestyy/katoaa).
+window.addEventListener('resize', () => map.invalidateSize());
 
 document.getElementById('filterVisible').onclick = () => {
   listFilterMode = 'visible';
@@ -953,14 +1108,17 @@ const ratingChipsEl = document.getElementById('ratingChips');
 
 function openFilterPanel() {
   document.getElementById('filterOverlay').classList.add('open');
+  document.getElementById('filterBackdrop').classList.add('open');
   updateFilterApplyButton();
 }
 function closeFilterPanel() {
   document.getElementById('filterOverlay').classList.remove('open');
+  document.getElementById('filterBackdrop').classList.remove('open');
 }
 document.getElementById('openFilter').onclick = openFilterPanel;
 document.getElementById('filterClose').onclick = closeFilterPanel;
 document.getElementById('filterApply').onclick = closeFilterPanel;
+document.getElementById('filterBackdrop').onclick = closeFilterPanel;
 document.getElementById('filterReset').onclick = () => {
   activeFilters.types.clear();
   activeFilters.minRating = 0;
@@ -972,6 +1130,8 @@ document.getElementById('filterReset').onclick = () => {
   renderFavorites();
 };
 
+showTab('map');
+showSidebarTab('list');
 renderList();
 updateFavTabLabel();
 loadAllRestaurantsOnce();
