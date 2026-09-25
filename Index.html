@@ -736,7 +736,6 @@
       <h3>Aukiolo</h3>
       <div class="chip-wrap">
         <button type="button" class="chip" id="chipOpen" aria-pressed="false">Avoinna</button>
-        <button type="button" class="chip" id="chipLunch" aria-pressed="false">Lounas käynnissä</button>
       </div>
     </div>
     <div class="filter-section">
@@ -920,7 +919,7 @@ function rebuildMarkers() {
 }
 
 // Aktiiviset suodattimet.
-const activeFilters = { types: new Set(), minRatingAvg: 0, minRatingOwn: 0, openNow: false, lunchRunning: false };
+const activeFilters = { types: new Set(), minRatingAvg: 0, minRatingOwn: 0, openNow: false };
 
 // Nopea nimihaku listasuodattimien alla. Suodattaa vasta kun kirjoitettu
 // vähintään 2 merkkiä, pienellä viiveellä ettei jokainen näppäily hae erikseen.
@@ -936,26 +935,22 @@ function matchesFilters(r) {
   }
   if (activeFilters.openNow) {
     const open = isOpenNow(r.openingHours);
-    // Tuntematon aukioloaika piilotetaan kun suodatin on päällä — emme voi väittää sen olevan auki.
-    if (open !== true) return false;
-  }
-  if (activeFilters.lunchRunning && isLunchHourNow()) {
-    const open = isOpenNow(r.openingHours);
-    if (open !== true) return false;
+    // Tuntematonta aukioloaikaa (null) ei piiloteta — emme voi väittää sen olevan kiinni.
+    // Piilotetaan vain ne, joiden tiedetään varmasti olevan kiinni juuri nyt.
+    if (open === false) return false;
   }
   return true;
 }
 
 function hasActiveFilters() {
-  return activeFilters.types.size > 0 || activeFilters.minRatingAvg > 0 || activeFilters.minRatingOwn > 0 || activeFilters.openNow || activeFilters.lunchRunning;
+  return activeFilters.types.size > 0 || activeFilters.minRatingAvg > 0 || activeFilters.minRatingOwn > 0 || activeFilters.openNow;
 }
 
 function activeFilterCount() {
   return activeFilters.types.size
     + (activeFilters.minRatingAvg > 0 ? 1 : 0)
     + (activeFilters.minRatingOwn > 0 ? 1 : 0)
-    + (activeFilters.openNow ? 1 : 0)
-    + (activeFilters.lunchRunning ? 1 : 0);
+    + (activeFilters.openNow ? 1 : 0);
 }
 
 function applyFiltersToMap() {
@@ -1224,14 +1219,6 @@ function isOpenNow(openingHours) {
 
   if (!matchedToday) return null;
   return open;
-}
-
-// "Lounas käynnissä" -suodatin ei katso ravintolakohtaista lounasaikaa (ei
-// luotettavaa dataa saatavilla) vaan pelkkää kellonaikaa: klo 11–14.
-function isLunchHourNow() {
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  return nowMin >= 11 * 60 && nowMin < 14 * 60;
 }
 
 function openingHoursHtml(r) {
@@ -1544,14 +1531,6 @@ document.getElementById('chipOpen').onclick = () => {
   renderList();
   renderFavorites();
 };
-document.getElementById('chipLunch').onclick = () => {
-  activeFilters.lunchRunning = !activeFilters.lunchRunning;
-  document.getElementById('chipLunch').classList.toggle('active', activeFilters.lunchRunning);
-  document.getElementById('chipLunch').setAttribute('aria-pressed', activeFilters.lunchRunning);
-  applyFiltersToMap();
-  renderList();
-  renderFavorites();
-};
 
 let filterOpenerEl = null;
 function handleFilterPanelKeydown(e) {
@@ -1593,11 +1572,8 @@ document.getElementById('filterReset').onclick = () => {
   activeFilters.minRatingAvg = 0;
   activeFilters.minRatingOwn = 0;
   activeFilters.openNow = false;
-  activeFilters.lunchRunning = false;
   document.getElementById('chipOpen').classList.remove('active');
-  document.getElementById('chipLunch').classList.remove('active');
   document.getElementById('chipOpen').setAttribute('aria-pressed', 'false');
-  document.getElementById('chipLunch').setAttribute('aria-pressed', 'false');
   [...typeChipsNationalityEl.children].forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
   [...typeChipsStyleEl.children].forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
   [...ratingChipsAvgEl.children].forEach(c => { c.classList.remove('active'); c.setAttribute('aria-pressed', 'false'); });
