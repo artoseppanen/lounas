@@ -173,6 +173,22 @@
     font-size: 12.5px;
     color: #5b6a61;
   }
+  .website-link {
+    display: inline-block;
+    margin-top: 5px;
+    font-size: 12.5px;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .website-link:active { opacity: 0.7; }
+  .hours {
+    margin: 4px 0 0;
+    font-size: 12.5px;
+    color: #5b6a61;
+  }
+  .hours.hours-unknown {
+    color: #767676;
+  }
   .empty-hint {
     color: #93998f;
     font-size: 13px;
@@ -286,6 +302,12 @@
     color: #5b6a61;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+  .filter-subheading {
+    margin: 14px 0 0;
+    font-size: 12px;
+    color: #93998f;
+    font-weight: 400;
   }
   .filter-note {
     margin: 6px 0 0;
@@ -405,7 +427,10 @@
     </div>
     <div class="filter-section">
       <h3>Tyyppi</h3>
-      <div class="chip-wrap" id="typeChips"></div>
+      <h4 class="filter-subheading">Kansallisuuspohjaiset</h4>
+      <div class="chip-wrap" id="typeChipsNationality"></div>
+      <h4 class="filter-subheading">Muu tyyli</h4>
+      <div class="chip-wrap" id="typeChipsStyle"></div>
     </div>
     <div class="filter-section">
       <h3>Arvosana vähintään</h3>
@@ -433,43 +458,46 @@ let restaurants = [];
 let listFilterMode = 'visible'; // 'visible' | 'all'
 let currentTab = 'map';
 
-// Karkea, alustava mäppäys OSM:n cuisine-tagista annettuihin suomenkielisiin
-// tyyppikategorioihin. Yksi ravintola voi osua useaan kategoriaan, ja moni
-// ravintola ei osu mihinkään jos cuisine-tieto puuttuu tai on tuntematon.
+// Mäppäys OSM:n cuisine-tagista annettuihin suomenkielisiin tyyppikategorioihin.
+// Avainsanat on tarkistettu OSM:n virallisesta Key:cuisine-dokumentaatiosta
+// (wiki.openstreetmap.org/wiki/Key:cuisine), ei enää pelkkää arvausta — silti
+// yksi ravintola voi jäädä ilman kategoriaa jos cuisine-tietoa ei ole tagattu,
+// ja osa harvinaisemmista arvoista (esim. "pub", "street_food") on yhä heikommin
+// vahvistettuja kuin selkeät etnisyysarvot (italian, chinese, thai jne).
 const CUISINE_CATEGORIES = [
-  { label: "Aasialainen", match: ["asian"] },
-  { label: "Baari/pubiruokaa", match: ["pub", "bar", "beer"] },
-  { label: "Afrikkalainen", match: ["african"] },
-  { label: "Amerikkalainen", match: ["american"] },
-  { label: "Espanjalainen", match: ["spanish"] },
-  { label: "Eurooppalainen", match: ["european"] },
-  { label: "Fine dining", match: ["fine_dining"] },
-  { label: "Hampurilainen", match: ["burger"] },
-  { label: "Intialainen", match: ["indian"] },
-  { label: "Italialainen", match: ["italian"] },
-  { label: "Japanilainen", match: ["japanese", "sushi", "ramen"] },
-  { label: "Kahvila", match: ["cafe", "coffee_shop"], amenity: "cafe" },
-  { label: "Kansainvälinen", match: ["international"] },
-  { label: "Kiinalainen", match: ["chinese"] },
-  { label: "Lähi-Itä", match: ["middle_eastern", "lebanese", "turkish", "kebab", "syrian"] },
-  { label: "Nepalilainen", match: ["nepalese", "nepali"] },
-  { label: "Marokkolainen", match: ["moroccan"] },
-  { label: "Meksikolainen", match: ["mexican", "tex_mex"] },
-  { label: "Moderni", match: ["modern", "fusion", "new_american"] },
-  { label: "Etninen", match: ["ethnic"] },
-  { label: "Perinteinen", match: ["traditional", "regional"] },
-  { label: "Pikaruoka", match: ["fast_food"], amenity: "fast_food" },
-  { label: "Pizza", match: ["pizza"] },
-  { label: "Ranskalainen", match: ["french"] },
-  { label: "Skandinaavinen", match: ["scandinavian", "nordic"] },
-  { label: "Street kitchen", match: ["street_food", "food_truck"] },
-  { label: "Suomalainen", match: ["finnish"] },
-  { label: "Thaimaalainen", match: ["thai"] },
-  { label: "Venäläinen", match: ["russian"] },
-  { label: "Vietnamilainen", match: ["vietnamese"] },
-  { label: "Välimeri", match: ["mediterranean", "greek"] },
-  { label: "Saksalainen", match: ["german"] },
-  { label: "Pihvi", match: ["steak_house", "steak"] }
+  { label: "Aasialainen", match: ["asian"], group: "nationality" },
+  { label: "Baari/pubiruokaa", match: ["pub"], group: "style" },
+  { label: "Afrikkalainen", match: ["african"], group: "nationality" },
+  { label: "Amerikkalainen", match: ["american"], group: "nationality" },
+  { label: "Espanjalainen", match: ["spanish"], group: "nationality" },
+  { label: "Eurooppalainen", match: ["european"], group: "nationality" },
+  { label: "Fine dining", match: ["fine_dining"], group: "style" },
+  { label: "Hampurilainen", match: ["burger"], group: "style" },
+  { label: "Intialainen", match: ["indian"], group: "nationality" },
+  { label: "Italialainen", match: ["italian"], group: "nationality" },
+  { label: "Japanilainen", match: ["japanese", "sushi"], group: "nationality" },
+  { label: "Kahvila", match: ["coffee_shop"], amenity: "cafe", group: "style" },
+  { label: "Kansainvälinen", match: ["international"], group: "style" },
+  { label: "Kiinalainen", match: ["chinese", "cantonese", "sichuanese"], group: "nationality" },
+  { label: "Lähi-Itä", match: ["middle_eastern", "lebanese", "arab", "syrian"], group: "nationality" },
+  { label: "Nepalilainen", match: ["nepalese"], group: "nationality" },
+  { label: "Marokkolainen", match: ["moroccan"], group: "nationality" },
+  { label: "Meksikolainen", match: ["mexican", "tex-mex"], group: "nationality" },
+  { label: "Moderni", match: ["modern", "fusion"], group: "style" },
+  { label: "Etninen", match: ["ethnic"], group: "style" },
+  { label: "Perinteinen", match: ["regional", "traditional"], group: "style" },
+  { label: "Pikaruoka", match: ["fast_food"], amenity: "fast_food", group: "style" },
+  { label: "Pizza", match: ["pizza"], group: "style" },
+  { label: "Ranskalainen", match: ["french"], group: "nationality" },
+  { label: "Skandinaavinen", match: ["scandinavian", "nordic"], group: "nationality" },
+  { label: "Street kitchen", match: ["street_food"], group: "style" },
+  { label: "Suomalainen", match: ["finnish"], group: "nationality" },
+  { label: "Thaimaalainen", match: ["thai"], group: "nationality" },
+  { label: "Venäläinen", match: ["russian"], group: "nationality" },
+  { label: "Vietnamilainen", match: ["vietnamese"], group: "nationality" },
+  { label: "Välimeri", match: ["mediterranean", "greek"], group: "nationality" },
+  { label: "Saksalainen", match: ["german"], group: "nationality" },
+  { label: "Pihvi", match: ["steak_house"], group: "style" }
 ];
 
 function computeCategories(rawCuisine, amenity) {
@@ -502,6 +530,8 @@ function elementToRestaurant(el) {
   const num = tags["addr:housenumber"];
   const rawCuisine = tags.cuisine || "";
   const amenity = tags.amenity || "";
+  const website = tags.website || tags["contact:website"] || "";
+  const openingHours = tags.opening_hours || "";
   return {
     id: `${el.type}/${el.id}`,
     lat, lon,
@@ -509,6 +539,8 @@ function elementToRestaurant(el) {
     cuisine: rawCuisine ? rawCuisine.replace(/_/g, " ").replace(/;/g, ", ") : "Ravintolan tyyppi ei tiedossa",
     cuisineUnknown: !rawCuisine,
     addr: street ? `${street}${num ? " " + num : ""}` : "",
+    website,
+    openingHours,
     amenity,
     categories: computeCategories(rawCuisine, amenity)
   };
@@ -646,10 +678,29 @@ function heartHtml(id) {
   return `<button class="heart" onclick="event.stopPropagation(); toggleFav('${id}')" aria-label="${fav ? 'Poista suosikeista' : 'Lisää suosikiksi'}">${fav ? '♥' : '♡'}</button>`;
 }
 
+function openingHoursHtml(r) {
+  if (!r.openingHours) {
+    return `<p class="hours hours-unknown">Aukioloajat ei tiedossa</p>`;
+  }
+  return `<p class="hours">Aukioloajat: ${r.openingHours}</p>`;
+}
+
+function normalizeUrl(url) {
+  if (!url) return '';
+  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+}
+
+function websiteLinkHtml(r) {
+  if (!r.website) return '';
+  return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Kotisivu / lounaslista ↗</a>`;
+}
+
 function popupHtml(r) {
   return `<h3>${r.name}</h3>
     <span class="genre${r.cuisineUnknown ? ' genre-unknown' : ''}">${r.cuisine}</span>
     <div class="addr">${r.addr}</div>
+    ${openingHoursHtml(r)}
+    ${websiteLinkHtml(r)}
     <div class="popup-actions">
       ${starsHtml(r.id)}
       ${heartHtml(r.id)}
@@ -710,6 +761,8 @@ function cardHtml(r) {
       </div>
       <span class="genre${r.cuisineUnknown ? ' genre-unknown' : ''}">${r.cuisine}</span>
       <p class="addr">${r.addr}</p>
+      ${openingHoursHtml(r)}
+      ${websiteLinkHtml(r)}
       <div class="card-actions">
         ${starsHtml(r.id)}
         ${heartHtml(r.id)}
@@ -784,7 +837,8 @@ document.getElementById('filterAll').onclick = () => {
 };
 
 // --- Suodatinpaneeli ---
-const typeChipsEl = document.getElementById('typeChips');
+const typeChipsNationalityEl = document.getElementById('typeChipsNationality');
+const typeChipsStyleEl = document.getElementById('typeChipsStyle');
 CUISINE_CATEGORIES.forEach(c => {
   const chip = document.createElement('span');
   chip.className = 'chip';
@@ -797,7 +851,7 @@ CUISINE_CATEGORIES.forEach(c => {
     renderList();
     renderFavorites();
   };
-  typeChipsEl.appendChild(chip);
+  (c.group === 'nationality' ? typeChipsNationalityEl : typeChipsStyleEl).appendChild(chip);
 });
 
 const ratingChipsEl = document.getElementById('ratingChips');
@@ -829,7 +883,8 @@ document.getElementById('filterApply').onclick = closeFilterPanel;
 document.getElementById('filterReset').onclick = () => {
   activeFilters.types.clear();
   activeFilters.minRating = 0;
-  [...typeChipsEl.children].forEach(c => c.classList.remove('active'));
+  [...typeChipsNationalityEl.children].forEach(c => c.classList.remove('active'));
+  [...typeChipsStyleEl.children].forEach(c => c.classList.remove('active'));
   [...ratingChipsEl.children].forEach(c => c.classList.remove('active'));
   applyFiltersToMap();
   renderList();
