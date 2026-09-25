@@ -290,6 +290,11 @@
     text-underline-offset: 2px;
   }
   .website-link:active { opacity: 0.7; }
+  .ext-link-icon {
+    display: inline-block;
+    margin-left: 3px;
+    vertical-align: -1px;
+  }
   .hours {
     margin: 4px 0 0;
     font-size: 12.5px;
@@ -1278,7 +1283,7 @@ function normalizeUrl(url) {
 
 function websiteLinkHtml(r) {
   if (!r.website) return '';
-  return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Lounaslista</a>`;
+  return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Lounaslista<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
 }
 
 const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2C7.6 2 4 5.6 4 10c0 5.4 6.7 11.1 7 11.3c.3.2.7.2 1 0c.3-.2 7-5.9 7-11.3c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6a3 3 0 0 1 0 6z"/></svg>';
