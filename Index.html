@@ -165,6 +165,9 @@
     color: var(--accent);
     white-space: nowrap;
   }
+  .genre.genre-unknown {
+    color: #767676; /* WCAG AA: ~4.54:1 valkoisella/vaalealla pohjalla */
+  }
   .addr {
     margin: 4px 0 0;
     font-size: 12.5px;
@@ -244,6 +247,7 @@
   /* Suodatinpaneeli */
   .filter-overlay {
     position: fixed;
+    top: 0;
     left: 0;
     right: 0;
     bottom: 0;
@@ -502,7 +506,8 @@ function elementToRestaurant(el) {
     id: `${el.type}/${el.id}`,
     lat, lon,
     name: tags.name || "Nimetön kohde",
-    cuisine: rawCuisine ? rawCuisine.replace(/_/g, " ").replace(/;/g, ", ") : "genre ei tiedossa",
+    cuisine: rawCuisine ? rawCuisine.replace(/_/g, " ").replace(/;/g, ", ") : "Ravintolan tyyppi ei tiedossa",
+    cuisineUnknown: !rawCuisine,
     addr: street ? `${street}${num ? " " + num : ""}` : "",
     amenity,
     categories: computeCategories(rawCuisine, amenity)
@@ -597,6 +602,12 @@ function applyFiltersToMap() {
   });
   const count = activeFilterCount();
   document.getElementById('filterCount').textContent = count > 0 ? ` (${count})` : '';
+  updateFilterApplyButton();
+}
+
+function updateFilterApplyButton() {
+  const matchCount = restaurants.filter(matchesFilters).length;
+  document.getElementById('filterApply').textContent = `Näytä tulokset (${matchCount})`;
 }
 
 // userData tallentaa per-ravintola suosikkitilan JA 1-5 tähden arvostelun.
@@ -637,7 +648,7 @@ function heartHtml(id) {
 
 function popupHtml(r) {
   return `<h3>${r.name}</h3>
-    <span class="genre">${r.cuisine}</span>
+    <span class="genre${r.cuisineUnknown ? ' genre-unknown' : ''}">${r.cuisine}</span>
     <div class="addr">${r.addr}</div>
     <div class="popup-actions">
       ${starsHtml(r.id)}
@@ -697,7 +708,7 @@ function cardHtml(r) {
       <div class="card-top">
         <h3>${r.name}</h3>
       </div>
-      <span class="genre">${r.cuisine}</span>
+      <span class="genre${r.cuisineUnknown ? ' genre-unknown' : ''}">${r.cuisine}</span>
       <p class="addr">${r.addr}</p>
       <div class="card-actions">
         ${starsHtml(r.id)}
@@ -806,10 +817,8 @@ const ratingChipsEl = document.getElementById('ratingChips');
 });
 
 function openFilterPanel() {
-  const overlay = document.getElementById('filterOverlay');
-  const headerBottom = document.querySelector('header').getBoundingClientRect().bottom;
-  overlay.style.top = headerBottom + 'px';
-  overlay.classList.add('open');
+  document.getElementById('filterOverlay').classList.add('open');
+  updateFilterApplyButton();
 }
 function closeFilterPanel() {
   document.getElementById('filterOverlay').classList.remove('open');
