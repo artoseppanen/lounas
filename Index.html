@@ -256,6 +256,44 @@
     cursor: pointer;
     color: var(--accent);
   }
+  .rating-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .stars-display {
+    position: relative;
+    display: inline-block;
+    width: 4.7em;
+    height: 1em;
+    font-size: 15px;
+    line-height: 1;
+  }
+  .stars-bg, .stars-fg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    white-space: nowrap;
+    letter-spacing: 1px;
+  }
+  .stars-bg { color: var(--line); }
+  .stars-fg {
+    overflow: hidden;
+    color: var(--accent);
+    pointer-events: none;
+  }
+  .stars-click {
+    position: absolute;
+    inset: 0;
+    display: flex;
+  }
+  .stars-click span { flex: 1; cursor: pointer; }
+  .rating-meta {
+    font-size: 11.5px;
+    color: #5b6a61;
+    white-space: nowrap;
+  }
   .leaflet-popup-content { margin: 10px 12px; }
   .leaflet-popup-content-wrapper { max-width: 240px; }
 
@@ -593,15 +631,18 @@
       </div>
     </div>
     <div class="filter-section">
+      <h3>Arvosana vähintään</h3>
+      <h4 class="filter-subheading">Kaikkien arviot</h4>
+      <div class="chip-wrap" id="ratingChipsAvg"></div>
+      <h4 class="filter-subheading">Omat arviot</h4>
+      <div class="chip-wrap" id="ratingChipsOwn"></div>
+    </div>
+    <div class="filter-section">
       <h3>Tyyppi</h3>
       <h4 class="filter-subheading">Kansallisuuspohjaiset</h4>
       <div class="chip-wrap" id="typeChipsNationality"></div>
       <h4 class="filter-subheading">Muu tyyli</h4>
       <div class="chip-wrap" id="typeChipsStyle"></div>
-    </div>
-    <div class="filter-section">
-      <h3>Arvosana vähintään</h3>
-      <div class="chip-wrap" id="ratingChips"></div>
     </div>
   </div>
   <div class="filter-footer">
@@ -771,10 +812,11 @@ function rebuildMarkers() {
 }
 
 // Aktiiviset suodattimet.
-const activeFilters = { types: new Set(), minRating: 0, openNow: false, lunchRunning: false };
+const activeFilters = { types: new Set(), minRatingAvg: 0, minRatingOwn: 0, openNow: false, lunchRunning: false };
 
 function matchesFilters(r) {
-  if (activeFilters.minRating > 0 && getRating(r.id) < activeFilters.minRating) return false;
+  if (activeFilters.minRatingAvg > 0 && getCommunityAvg(r.id) < activeFilters.minRatingAvg) return false;
+  if (activeFilters.minRatingOwn > 0 && getRating(r.id) < activeFilters.minRatingOwn) return false;
   if (activeFilters.types.size > 0) {
     const hit = r.categories.some(c => activeFilters.types.has(c));
     if (!hit) return false;
@@ -792,12 +834,13 @@ function matchesFilters(r) {
 }
 
 function hasActiveFilters() {
-  return activeFilters.types.size > 0 || activeFilters.minRating > 0 || activeFilters.openNow || activeFilters.lunchRunning;
+  return activeFilters.types.size > 0 || activeFilters.minRatingAvg > 0 || activeFilters.minRatingOwn > 0 || activeFilters.openNow || activeFilters.lunchRunning;
 }
 
 function activeFilterCount() {
   return activeFilters.types.size
-    + (activeFilters.minRating > 0 ? 1 : 0)
+    + (activeFilters.minRatingAvg > 0 ? 1 : 0)
+    + (activeFilters.minRatingOwn > 0 ? 1 : 0)
     + (activeFilters.openNow ? 1 : 0)
     + (activeFilters.lunchRunning ? 1 : 0);
 }
@@ -834,6 +877,39 @@ function saveUserData() {
 function isFav(id) { return !!(userData[id] && userData[id].fav); }
 function getRating(id) { return (userData[id] && userData[id].rating) || 0; }
 
+// --- DEMO: simuloitu yhteisön keskiarvo ---
+// Oikeassa toteutuksessa tämä data tulisi backendistä (esim. Firestore/Supabase),
+// koska muiden käyttäjien arviot eivät voi asua pelkässä selaimen localStoragessa.
+// Tässä demossa "muiden arviot" on generoitu deterministisesti ravintolan id:stä,
+// jotta jokainen ravintola näyttää uskottavan mutta kiinteän lähtötilanteen, ja
+// oma arviosi lasketaan oikeasti mukaan keskiarvoon kun arvostelet.
+let communityRatings = {};
+try {
+  communityRatings = JSON.parse(localStorage.getItem('tampereLounasCommunityRatings') || '{}');
+} catch (e) {
+  communityRatings = {};
+}
+function saveCommunityRatings() {
+  try { localStorage.setItem('tampereLounasCommunityRatings', JSON.stringify(communityRatings)); } catch (e) {}
+}
+function seedCommunityIfNeeded(id) {
+  if (communityRatings[id]) return;
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  const count = 3 + (hash % 35);            // 3–37 "muiden" arviota
+  const avgSeed = 2.8 + ((hash >> 5) % 21) / 10; // 2.8–4.8 tähteä keskimäärin
+  communityRatings[id] = { sum: Math.round(avgSeed * count), count };
+}
+function getCommunityAvg(id) {
+  seedCommunityIfNeeded(id);
+  const c = communityRatings[id];
+  return c.count > 0 ? c.sum / c.count : 0;
+}
+function getCommunityCount(id) {
+  seedCommunityIfNeeded(id);
+  return communityRatings[id].count;
+}
+
 const map = L.map('map', { zoomControl: true }).setView([61.4978, 23.7610], 14);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
@@ -842,13 +918,27 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const markers = {};
 
+// Yksi tähtirivi: harmaa pohja + korostusvärinen täyttö keskiarvon mukaan
+// (myös puolikkaat, CSS leveys-%), ja sen päällä 5 näkymätöntä klikkausaluetta
+// joilla annetaan oma arvio. Sama elementti siis sekä näyttää että kerää arviot.
 function starsHtml(id) {
-  const rating = getRating(id);
-  let html = '';
-  for (let i = 1; i <= 5; i++) {
-    html += `<span class="star" onclick="event.stopPropagation(); setRating('${id}', ${i})">${rating >= i ? '★' : '☆'}</span>`;
-  }
-  return `<span class="stars">${html}</span>`;
+  const avg = getCommunityAvg(id);
+  const count = getCommunityCount(id);
+  const own = getRating(id);
+  const fillPct = Math.max(0, Math.min(100, (avg / 5) * 100));
+  const clicks = [1, 2, 3, 4, 5]
+    .map(i => `<span onclick="event.stopPropagation(); setRating('${id}', ${i})"></span>`)
+    .join('');
+  const metaText = count > 0 ? `${avg.toFixed(1)} (${count})` : 'Ei arvioita vielä';
+  const ownText = own > 0 ? ` · Sinun arviosi ★${own}` : '';
+  return `<div class="rating-row">
+    <span class="stars-display">
+      <span class="stars-bg">★★★★★</span>
+      <span class="stars-fg" style="width:${fillPct}%">★★★★★</span>
+      <span class="stars-click">${clicks}</span>
+    </span>
+    <span class="rating-meta">${metaText}${ownText}</span>
+  </div>`;
 }
 
 function heartHtml(id) {
@@ -1053,8 +1143,22 @@ window.toggleFav = toggleFav;
 
 function setRating(id, val) {
   userData[id] = userData[id] || {};
-  userData[id].rating = (userData[id].rating === val) ? 0 : val;
+  const prev = userData[id].rating || 0;
+  seedCommunityIfNeeded(id);
+  const c = communityRatings[id];
+
+  if (val === prev) {
+    // sama tähti uudelleen -> poistetaan oma arvio kokonaan yhteisökeskiarvosta
+    if (prev > 0) { c.sum -= prev; c.count = Math.max(0, c.count - 1); }
+    userData[id].rating = 0;
+  } else {
+    if (prev > 0) c.sum = c.sum - prev + val;   // korvataan aiempi oma arvio
+    else { c.sum += val; c.count += 1; }        // ensimmäinen oma arvio tälle ravintolalle
+    userData[id].rating = val;
+  }
+
   saveUserData();
+  saveCommunityRatings();
   refreshAfterUserAction(id);
 }
 window.setRating = setRating;
@@ -1214,20 +1318,36 @@ CUISINE_CATEGORIES.forEach(c => {
   (c.group === 'nationality' ? typeChipsNationalityEl : typeChipsStyleEl).appendChild(chip);
 });
 
-const ratingChipsEl = document.getElementById('ratingChips');
+const ratingChipsAvgEl = document.getElementById('ratingChipsAvg');
 [1, 2, 3, 4].forEach(n => {
   const chip = document.createElement('span');
   chip.className = 'chip';
   chip.textContent = '★'.repeat(n);
   chip.onclick = () => {
-    activeFilters.minRating = (activeFilters.minRating === n) ? 0 : n;
-    [...ratingChipsEl.children].forEach(c => c.classList.remove('active'));
-    if (activeFilters.minRating === n) chip.classList.add('active');
+    activeFilters.minRatingAvg = (activeFilters.minRatingAvg === n) ? 0 : n;
+    [...ratingChipsAvgEl.children].forEach(c => c.classList.remove('active'));
+    if (activeFilters.minRatingAvg === n) chip.classList.add('active');
     applyFiltersToMap();
     renderList();
     renderFavorites();
   };
-  ratingChipsEl.appendChild(chip);
+  ratingChipsAvgEl.appendChild(chip);
+});
+
+const ratingChipsOwnEl = document.getElementById('ratingChipsOwn');
+[1, 2, 3, 4].forEach(n => {
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.textContent = '★'.repeat(n);
+  chip.onclick = () => {
+    activeFilters.minRatingOwn = (activeFilters.minRatingOwn === n) ? 0 : n;
+    [...ratingChipsOwnEl.children].forEach(c => c.classList.remove('active'));
+    if (activeFilters.minRatingOwn === n) chip.classList.add('active');
+    applyFiltersToMap();
+    renderList();
+    renderFavorites();
+  };
+  ratingChipsOwnEl.appendChild(chip);
 });
 
 document.getElementById('chipOpen').onclick = () => {
@@ -1260,14 +1380,16 @@ document.getElementById('filterApply').onclick = closeFilterPanel;
 document.getElementById('filterBackdrop').onclick = closeFilterPanel;
 document.getElementById('filterReset').onclick = () => {
   activeFilters.types.clear();
-  activeFilters.minRating = 0;
+  activeFilters.minRatingAvg = 0;
+  activeFilters.minRatingOwn = 0;
   activeFilters.openNow = false;
   activeFilters.lunchRunning = false;
   document.getElementById('chipOpen').classList.remove('active');
   document.getElementById('chipLunch').classList.remove('active');
   [...typeChipsNationalityEl.children].forEach(c => c.classList.remove('active'));
   [...typeChipsStyleEl.children].forEach(c => c.classList.remove('active'));
-  [...ratingChipsEl.children].forEach(c => c.classList.remove('active'));
+  [...ratingChipsAvgEl.children].forEach(c => c.classList.remove('active'));
+  [...ratingChipsOwnEl.children].forEach(c => c.classList.remove('active'));
   applyFiltersToMap();
   renderList();
   renderFavorites();
