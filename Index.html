@@ -344,41 +344,41 @@
   }
   .stars-display {
     position: relative;
-    display: inline-block;
-    width: 6.4em;
-    height: 1.1em;
+    display: inline-flex;
+    gap: 4px;
+    height: 1.2em;
     font-size: 21px;
     line-height: 1;
   }
-  .stars-bg, .stars-fg, .stars-hover {
-    position: absolute;
-    top: 0;
-    left: 0;
-    white-space: nowrap;
-    letter-spacing: 4px;
+  .star-slot {
+    position: relative;
+    display: inline-block;
+    width: 1em;
+    height: 1.2em;
   }
-  .stars-bg { color: var(--line); }
-  .stars-fg {
+  .star-empty, .star-fill, .star-hoverlayer {
+    position: absolute;
+    inset: 0;
+    white-space: nowrap;
+  }
+  .star-empty { color: var(--line); }
+  .star-fill {
     overflow: hidden;
+    width: 0%;
     color: var(--accent);
     pointer-events: none;
   }
-  .stars-hover {
-    overflow: hidden;
+  .star-slot.hovered .star-fill { visibility: hidden; }
+  .star-hoverlayer {
     color: var(--accent-text);
-    width: 0%;
+    display: none;
     pointer-events: none;
   }
-  .stars-display.hovering .stars-fg { visibility: hidden; }
-  .stars-click {
+  .star-slot.hovered .star-hoverlayer { display: block; }
+  .star-btn {
     position: absolute;
     inset: 0;
-    display: flex;
-    gap: 3px;
-  }
-  .stars-click span,
-  .stars-click button {
-    flex: 1;
+    width: 100%;
     height: 100%;
     background: none;
     border: none;
@@ -1033,39 +1033,43 @@ function starsHtml(id) {
   const avg = getCommunityAvg(id);
   const count = getCommunityCount(id);
   const own = getRating(id);
-  const fillPct = Math.max(0, Math.min(100, (avg / 5) * 100));
-  const clicks = [1, 2, 3, 4, 5]
-    .map(i => `<button type="button" aria-label="Anna ${i} tähden arvio" aria-pressed="${own === i}"
-        onmouseenter="starHoverPreview(event, ${i})"
-        onclick="event.stopPropagation(); setRating('${id}', ${i})"></button>`)
-    .join('');
+  const slots = [1, 2, 3, 4, 5].map(i => {
+    // Kunkin yksittäisen tähden oma täyttöprosentti keskiarvosta (mahdollistaa puolikkaat vain KESKIARVOSSA).
+    const slotFill = Math.max(0, Math.min(100, (avg - (i - 1)) * 100));
+    return `<span class="star-slot" data-index="${i}">
+        <span class="star-empty" aria-hidden="true">★</span>
+        <span class="star-fill" aria-hidden="true" style="width:${slotFill}%">★</span>
+        <span class="star-hoverlayer" aria-hidden="true">★</span>
+        <button type="button" class="star-btn" aria-label="Anna ${i} tähden arvio" aria-pressed="${own === i}"
+          onmouseenter="starHoverPreview(event, ${i})"
+          onclick="event.stopPropagation(); setRating('${id}', ${i})"></button>
+      </span>`;
+  }).join('');
   const metaText = count > 0 ? `${avg.toFixed(1)} (${count})` : 'Ei arvioita vielä';
   const ownText = own > 0 ? ` · Arviosi ★${own}` : '';
   const avgLabel = count > 0 ? `Keskiarvo ${avg.toFixed(1)} tähteä, ${count} arviota.` : 'Ei arvioita vielä.';
   return `<div class="rating-row">
     <span class="stars-display" role="group" aria-label="${avgLabel}${own > 0 ? ' Oma arviosi: ' + own + ' tähteä.' : ''}" onmouseleave="starHoverEnd(event)">
-      <span class="stars-bg" aria-hidden="true">★★★★★</span>
-      <span class="stars-fg" aria-hidden="true" style="width:${fillPct}%">★★★★★</span>
-      <span class="stars-hover" aria-hidden="true">★★★★★</span>
-      <span class="stars-click">${clicks}</span>
+      ${slots}
     </span>
     <span class="rating-meta">${metaText}${ownText}</span>
   </div>`;
 }
 
-// Hover-esikatselu: näytä täytettynä juuri niin monta tähteä kuin hoveroitu
-// kohta edustaa, ja piilota sillä aikaa yleinen keskiarvotäyttö ettei ne sekoitu.
+// Hover-esikatselu: oma arvio annetaan ja hoveroidaan VAIN kokonaisina tähtinä
+// (puolikkaat näkyvät ainoastaan yleisessä keskiarvossa yllä). Kun hoveroidaan
+// tähteä n, täytetään tähdet 1..n kokonaan hover-värillä ja piilotetaan niiden
+// keskiarvotäyttö väliaikaisesti ettei ne sekoitu keskenään.
 function starHoverPreview(e, n) {
   const group = e.currentTarget.closest('.stars-display');
   if (!group) return;
-  group.querySelector('.stars-hover').style.width = (n / 5 * 100) + '%';
-  group.classList.add('hovering');
+  group.querySelectorAll('.star-slot').forEach(slot => {
+    slot.classList.toggle('hovered', Number(slot.dataset.index) <= n);
+  });
 }
 function starHoverEnd(e) {
   const group = e.currentTarget.closest('.stars-display') || e.currentTarget;
-  const hoverEl = group.querySelector('.stars-hover');
-  if (hoverEl) hoverEl.style.width = '0%';
-  group.classList.remove('hovering');
+  group.querySelectorAll('.star-slot').forEach(slot => slot.classList.remove('hovered'));
 }
 
 function heartHtml(id) {
