@@ -877,8 +877,46 @@ function setLoadingBanner(state, text) {
   }
 }
 
+// 24h välimuisti: sama käyttäjä/selain ei hae Overpassista uudelleen jos data
+// on jo haettu viimeisen vuorokauden aikana. Kevennetään Overpassin kuormaa
+// merkittävästi, koska ravintolalistaus ei muutu tunneittain.
+const CACHE_KEY = 'tampereLounasDataCache';
+const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function loadFromCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed.fetchedAt || !Array.isArray(parsed.restaurants)) return null;
+    if (Date.now() - parsed.fetchedAt > CACHE_MAX_AGE_MS) return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+function saveToCache(list) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), restaurants: list }));
+  } catch (e) {}
+}
+
 async function loadAllRestaurantsOnce() {
   const status = document.getElementById('status');
+
+  const cached = loadFromCache();
+  if (cached) {
+    restaurants = cached.restaurants;
+    rebuildMarkers();
+    applyFiltersToMap();
+    updateHeaderInfo();
+    renderList();
+    renderFavorites();
+    updateFavTabLabel();
+    status.textContent = "";
+    return;
+  }
+
   setLoadingBanner('loading');
   status.textContent = "· haetaan…";
   try {
@@ -893,6 +931,7 @@ async function loadAllRestaurantsOnce() {
     restaurants = data.elements
       .map(elementToRestaurant)
       .filter(r => r.lat && r.lon);
+    saveToCache(restaurants);
     rebuildMarkers();
     applyFiltersToMap();
     updateHeaderInfo();
