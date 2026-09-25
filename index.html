@@ -295,6 +295,67 @@
     margin-left: 3px;
     vertical-align: -1px;
   }
+
+  .lunch-summary {
+    margin-top: 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fafaf9;
+  }
+  .lunch-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: var(--ink);
+  }
+  .lunch-toggle-text { font-size: 12.5px; }
+  .lunch-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+  .lunch-summary.expanded .lunch-chevron { transform: rotate(180deg); }
+  .lunch-detail {
+    display: none;
+    padding: 0 10px 10px;
+    border-top: 1px solid var(--line);
+  }
+  .lunch-summary.expanded .lunch-detail { display: block; }
+  .lunch-prices {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 8px 0 6px;
+  }
+  .lunch-group { margin-top: 6px; }
+  .lunch-group-label {
+    display: block;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .lunch-item {
+    font-size: 12.5px;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .allergen-badge {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--muted);
+    background: #e3e3e0;
+    border-radius: 4px;
+    padding: 0 3px;
+    margin-left: 3px;
+    vertical-align: 1px;
+  }
   .hours {
     margin: 4px 0 0;
     font-size: 12.5px;
@@ -1286,6 +1347,94 @@ function websiteLinkHtml(r) {
   return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Lounaslista<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
 }
 
+// --- DEMO: tämän päivän lounaslista ---
+// Oikeassa toteutuksessa tämä data tulisi backendin jäsentämänä (ks. selitys
+// keskustelussa), ei koskaan suoraan selaimesta parsittuna. Tässä demossa
+// tuotetaan uskottava mutta täysin keksitty päivän lounaslista deterministisesti
+// ravintolan id:stä ja tämän päivän päivämäärästä, jotta UI-mekaniikkaa
+// (tiivis rivi -> laajennettu näkymä) voi kokeilla oikeasti.
+const MOCK_MAINS = [
+  "Paneroitua turskaa sitruunavoissa", "Parmesaanilla kuorrutettua kananfileetä tomaattikastikkeessa",
+  "Sitruunainen härkäpaputagine", "Talon omat lihapullat kermaisella kastikkeella",
+  "Rapeita mustapapupihvejä vihannespedillä", "Broiler gyros paahdetuilla vihanneksilla",
+  "Riistakäristystä ja puolukkasurvosta", "Sticky-kananpoikaa"
+];
+const MOCK_SIDES = ["Tilli-voiperunat", "Kurkumariisi", "Yrttipaahdetut juurekset", "Rosmariiniperunat", "Paprikariisi", "Basmatiriisi"];
+const MOCK_SOUPS = ["Lehtikaalikeitto", "Kermainen lohikeitto", "Perinteinen hernekeitto", "Porkkana-kookoskeitto", "Minestronekeitto"];
+const MOCK_DESSERTS = ["Vaniljakermavaahtoa ja mansikkahilloa", "Geisharahkaa", "Vadelma-lakritsirahka", "Mutakakku", "Sitruunaleivos"];
+const MOCK_ALLERGEN_SETS = [["G", "M"], ["L"], ["Veg", "G"], ["KM"], ["G", "L"], ["M"]];
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function todayDateStr() { return new Date().toISOString().slice(0, 10); }
+function isWeekdayToday() { const d = new Date().getDay(); return d >= 1 && d <= 5; }
+
+function generateMockLunch(r) {
+  const seed = hashStr(r.id + todayDateStr());
+  const pick = (arr, salt) => arr[(seed + salt) % arr.length];
+  const mainCount = 2 + (seed % 2); // 2 tai 3 pääruokavaihtoehtoa
+  const mains = [];
+  for (let i = 0; i < mainCount; i++) {
+    mains.push({ name: pick(MOCK_MAINS, i * 7 + 1), allergens: pick(MOCK_ALLERGEN_SETS, i * 3 + 2) });
+  }
+  const sides = [...new Set([pick(MOCK_SIDES, 11), pick(MOCK_SIDES, 19)])];
+  const soup = { name: pick(MOCK_SOUPS, 5), allergens: pick(MOCK_ALLERGEN_SETS, 6) };
+  const dessert = { name: pick(MOCK_DESSERTS, 9), allergens: pick(MOCK_ALLERGEN_SETS, 10) };
+  const priceBuffet = (12 + (seed % 4)) + ',95 €';
+  const priceSoup = (9 + (seed % 3)) + ',50 €';
+  return { mains, sides, soup, dessert, priceBuffet, priceSoup };
+}
+
+function allergenBadges(codes) {
+  return codes.map(c => `<span class="allergen-badge">${c}</span>`).join('');
+}
+
+function lunchSummaryHtml(r) {
+  if (!r.website || !isWeekdayToday()) return '';
+  const menu = generateMockLunch(r);
+  const moreMains = menu.mains.length - 1;
+  const moreText = moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : '';
+
+  const detail = `
+    <div class="lunch-prices">Lounasbuffet ${menu.priceBuffet} · Keittolounas ${menu.priceSoup}</div>
+    <div class="lunch-group">
+      <span class="lunch-group-label">Pääruoka</span>
+      ${menu.mains.map(m => `<div class="lunch-item">${m.name} ${allergenBadges(m.allergens)}</div>`).join('')}
+    </div>
+    <div class="lunch-group">
+      <span class="lunch-group-label">Lisäke</span>
+      ${menu.sides.map(s => `<div class="lunch-item">${s}</div>`).join('')}
+    </div>
+    <div class="lunch-group">
+      <span class="lunch-group-label">Keitto</span>
+      <div class="lunch-item">${menu.soup.name} ${allergenBadges(menu.soup.allergens)}</div>
+    </div>
+    <div class="lunch-group">
+      <span class="lunch-group-label">Jälkiruoka</span>
+      <div class="lunch-item">${menu.dessert.name} ${allergenBadges(menu.dessert.allergens)}</div>
+    </div>
+  `;
+
+  return `<div class="lunch-summary">
+    <button type="button" class="lunch-toggle" aria-expanded="false" onclick="event.stopPropagation(); toggleLunchDetail(this)">
+      <span class="lunch-toggle-text">Tänään: ${menu.priceBuffet} · ${menu.mains[0].name}${moreText}</span>
+      <svg class="lunch-chevron" viewBox="0 0 24 24" width="12" height="12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+    <div class="lunch-detail">${detail}</div>
+  </div>`;
+}
+function toggleLunchDetail(btn) {
+  const wrap = btn.closest('.lunch-summary');
+  const expanded = wrap.classList.toggle('expanded');
+  btn.setAttribute('aria-expanded', String(expanded));
+}
+window.toggleLunchDetail = toggleLunchDetail;
+
 const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2C7.6 2 4 5.6 4 10c0 5.4 6.7 11.1 7 11.3c.3.2.7.2 1 0c.3-.2 7-5.9 7-11.3c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6a3 3 0 0 1 0 6z"/></svg>';
 
 function genreHtml(r) {
@@ -1302,6 +1451,7 @@ function popupHtml(r) {
     <div class="addr">${r.addr ? ADDR_ICON + ' ' + r.addr : ''}</div>
     ${openingHoursHtml(r)}
     ${websiteLinkHtml(r)}
+    ${lunchSummaryHtml(r)}
     <div class="popup-actions">
       ${starsHtml(r.id)}
     </div>`;
@@ -1381,6 +1531,7 @@ function cardHtml(r) {
       <p class="addr">${r.addr ? ADDR_ICON + ' ' + r.addr : ''}</p>
       ${openingHoursHtml(r)}
       ${websiteLinkHtml(r)}
+      ${lunchSummaryHtml(r)}
       <div class="card-actions">
         ${starsHtml(r.id)}
       </div>
