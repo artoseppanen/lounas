@@ -1072,24 +1072,34 @@ function saveToCache(list) {
   } catch (e) {}
 }
 
+// Firestore ei salli "/"-merkkiä dokumentin ID:ssä, mutta sovelluksen sisällä
+// käytetään kaikkialla OSM:n omaa "node/12345"-muotoa (kartta, popoverit,
+// suodattimet). Nämä kaksi apufunktiota muuntavat näiden kahden muodon välillä
+// juuri niissä harvoissa kohdissa joissa id kirjoitetaan/luetaan Firestoresta.
+function sanitizeFirestoreId(id) { return id.replace(/\//g, '_'); }
+function unsanitizeFirestoreId(id) { return id.replace('_', '/'); } // vain ensimmäinen "_" -> "/"
+
 async function loadFromFirestore() {
   const snap = await fbDb.collection('restaurants').get();
   if (snap.empty) return null;
-  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  // Käytetään dokumentin OMAA "id"-kenttää (alkuperäinen "node/12345" -muoto),
+  // ei Firestore-dokumentin sanitoitua ID:tä (doc.id, esim. "node_12345").
+  return snap.docs.map(doc => ({ ...doc.data(), id: doc.data().id || unsanitizeFirestoreId(doc.id) }));
 }
 
 async function loadUserDataFromFirestore() {
   // Suosikit
   const favSnap = await fbDb.collection('users').doc(fbUid).collection('favorites').get();
   favSnap.forEach(doc => {
-    userData[doc.id] = userData[doc.id] || {};
-    userData[doc.id].fav = true;
+    const id = unsanitizeFirestoreId(doc.id);
+    userData[id] = userData[id] || {};
+    userData[id].fav = true;
   });
   // Omat arviot (collectionGroup-kysely löytää kaikki ravintolat joissa tällä
   // käyttäjällä on arvio, riippumatta ravintolan id:stä)
   const ratingSnap = await fbDb.collectionGroup('ratings').where('userId', '==', fbUid).get();
   ratingSnap.forEach(doc => {
-    const restaurantId = doc.ref.parent.parent.id;
+    const restaurantId = unsanitizeFirestoreId(doc.ref.parent.parent.id);
     userData[restaurantId] = userData[restaurantId] || {};
     userData[restaurantId].rating = doc.data().rating;
   });
@@ -1681,7 +1691,7 @@ function toggleFav(id) {
 
   if (FIREBASE_ENABLED) {
     fbReady.then(() => {
-      const ref = fbDb.collection('users').doc(fbUid).collection('favorites').doc(id);
+      const ref = fbDb.collection('users').doc(fbUid).collection('favorites').doc(sanitizeFirestoreId(id));
       if (userData[id].fav) {
         ref.set({ addedAt: firebase.firestore.FieldValue.serverTimestamp() })
           .catch(err => console.error('Suosikin tallennus epäonnistui:', err));
@@ -1703,7 +1713,7 @@ function setRating(id, val) {
     // laskee ratingSum/ratingCount-aggregaatin palvelinpuolella luotettavasti,
     // asiakas ei koskaan itse kirjoita niitä (ks. firestore.rules).
     fbReady.then(() => {
-      const ref = fbDb.collection('restaurants').doc(id).collection('ratings').doc(fbUid);
+      const ref = fbDb.collection('restaurants').doc(sanitizeFirestoreId(id)).collection('ratings').doc(fbUid);
       const write = newVal > 0
         ? ref.set({ rating: newVal, userId: fbUid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
         : ref.delete();
