@@ -65,17 +65,22 @@
   }
   .filter-btn {
     position: relative;
-    border: 1px solid var(--ink);
-    background: #fff;
-    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: var(--ink);
+    color: var(--paper);
     border-radius: 999px;
-    padding: 7px 14px;
+    padding: 8px 16px;
     font-size: 13.5px;
+    font-weight: 600;
     cursor: pointer;
     flex-shrink: 0;
   }
+  .filter-icon { flex-shrink: 0; }
   .filter-btn .count {
-    color: var(--ink);
+    color: var(--paper);
     margin-left: 2px;
     font-weight: 400;
   }
@@ -140,10 +145,20 @@
     border-bottom: 1px solid var(--line);
     z-index: 5;
   }
+  .segment-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
   .segment {
     display: flex;
     gap: 6px;
-    margin-bottom: 8px;
+    flex: 1;
+  }
+  .filter-btn-sidebar {
+    display: none;
+    padding: 8px 10px;
   }
   .seg-btn {
     flex: 1;
@@ -601,6 +616,7 @@
 
   /* ===== Työpöytäversio (>=990px): pysyvä 400px sivupalkki + tumma overlay suodattimille ===== */
   @media (min-width: 990px) {
+    .filter-btn-sidebar { display: inline-flex; }
     main {
       display: flex;
       flex-direction: row;
@@ -724,7 +740,12 @@
     </svg>
     <h1>Lounas</h1>
   </div>
-  <button class="filter-btn" id="openFilter" aria-haspopup="dialog" aria-expanded="false">Suodata<span class="count" id="filterCount"></span></button>
+  <button class="filter-btn" id="openFilter" aria-haspopup="dialog" aria-expanded="false">
+    <svg class="filter-icon" viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10M10 19h4"/>
+    </svg>
+    Suodata<span class="count" id="filterCount"></span>
+  </button>
 </header>
 
 <div id="loadingBanner" class="loading-banner" role="status" aria-live="polite">
@@ -755,9 +776,17 @@
 
       <div id="listView">
         <div class="list-toolbar">
-          <div class="segment">
-            <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
-            <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
+          <div class="segment-row">
+            <div class="segment">
+              <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
+              <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
+            </div>
+            <button class="filter-btn filter-btn-sidebar" id="openFilterSidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Suodata ravintoloita">
+              <svg class="filter-icon" viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10M10 19h4"/>
+              </svg>
+              <span class="count" id="filterCountSidebar"></span>
+            </button>
           </div>
           <div class="search-wrap">
             <label for="nameSearch" class="visually-hidden">Hae ravintolaa nimellä</label>
@@ -1067,7 +1096,9 @@ function applyFiltersToMap() {
     if (!show && map.hasLayer(m)) map.removeLayer(m);
   });
   const count = activeFilterCount();
-  document.getElementById('filterCount').textContent = count > 0 ? ` (${count})` : '';
+  const countText = count > 0 ? ` (${count})` : '';
+  document.getElementById('filterCount').textContent = countText;
+  document.getElementById('filterCountSidebar').textContent = countText;
   updateFilterApplyButton();
 }
 
@@ -1751,6 +1782,7 @@ function openFilterPanel() {
   overlay.classList.add('open');
   document.getElementById('filterBackdrop').classList.add('open');
   document.getElementById('openFilter').setAttribute('aria-expanded', 'true');
+  document.getElementById('openFilterSidebar').setAttribute('aria-expanded', 'true');
   updateFilterApplyButton();
   document.getElementById('filterClose').focus();
   document.addEventListener('keydown', handleFilterPanelKeydown);
@@ -1759,10 +1791,12 @@ function closeFilterPanel() {
   document.getElementById('filterOverlay').classList.remove('open');
   document.getElementById('filterBackdrop').classList.remove('open');
   document.getElementById('openFilter').setAttribute('aria-expanded', 'false');
+  document.getElementById('openFilterSidebar').setAttribute('aria-expanded', 'false');
   document.removeEventListener('keydown', handleFilterPanelKeydown);
   if (filterOpenerEl) filterOpenerEl.focus();
 }
 document.getElementById('openFilter').onclick = openFilterPanel;
+document.getElementById('openFilterSidebar').onclick = openFilterPanel;
 document.getElementById('filterClose').onclick = closeFilterPanel;
 document.getElementById('filterApply').onclick = closeFilterPanel;
 document.getElementById('filterBackdrop').onclick = closeFilterPanel;
