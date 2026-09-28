@@ -1106,6 +1106,31 @@ async function loadUserDataFromFirestore() {
   saveUserData();
 }
 
+// Tämän päivän oikeat, backendin jäsentämät lounaslistat (ks. functions/index.js
+// syncDailyMenus). Avain on ravintolan ALKUPERÄINEN "node/12345"-muotoinen id,
+// jotta lunchSummaryHtml voi hakea sen suoraan r.id:llä. Ravintoloille joita ei
+// löydy tästä (esim. menuSources-riviä ei ole vielä lisätty) käytetään demon
+// keksittyä mock-dataa fallbackina - ks. lunchSummaryHtml alempana.
+let realDailyMenus = {};
+
+async function loadDailyMenusFromFirestore() {
+  try {
+    const today = todayDateStr();
+    const snap = await fbDb.collection('dailyMenus').where('date', '==', today).get();
+    const map = {};
+    snap.forEach(doc => {
+      const data = doc.data();
+      if (!data.restaurantId) return;
+      const originalId = unsanitizeFirestoreId(data.restaurantId);
+      map[originalId] = data;
+    });
+    realDailyMenus = map;
+  } catch (err) {
+    console.error('dailyMenus-haku epäonnistui, käytetään mock-lounaslistoja:', err);
+    realDailyMenus = {};
+  }
+}
+
 async function loadAllRestaurantsOnce() {
   const status = document.getElementById('status');
 
@@ -1118,6 +1143,7 @@ async function loadAllRestaurantsOnce() {
       const fromFirestore = await loadFromFirestore();
       if (fromFirestore) {
         restaurants = fromFirestore;
+        await loadDailyMenusFromFirestore();
         rebuildMarkers();
         applyFiltersToMap();
         updateHeaderInfo();
@@ -1611,11 +1637,51 @@ function lunchToggleWrapper(summaryText, detailHtml) {
 function lunchSummaryHtml(r) {
   if (!r.website || !isWeekdayToday()) return '';
 
-  // Demossa jaetaan ravintolat deterministisesti kahteen ryhmään simuloimaan
-  // sitä että oikeassa backendissä osa ravintoloista jäsentyy täysin
-  // (parseStatus "ok", esim. Poweresta) ja osa vain hintojen osalta
-  // (parseStatus "partial", esim. Linkosuo) — sama ravintola pysyy aina
-  // samassa ryhmässä, jotta demo tuntuu johdonmukaiselta.
+  // 1) Oikea, backendin jäsentämä data (functions/index.js syncDailyMenus) —
+  // käytetään aina kun tälle ravintolalle löytyy tämän päivän dokumentti.
+  const real = realDailyMenus[r.id];
+  if (real) {
+    if (real.parseStatus === 'failed') return ''; // ei väitetä mitään jos jäsennys epäonnistui
+    const priceLine = (real.prices || []).map(p => `${p.label} ${p.price}`).join(' · ');
+
+    if (real.parseStatus === 'partial') {
+      const rawLines = (real.rawText || '').split('\n').filter(Boolean);
+      const detail = `
+        <div class="lunch-prices">${priceLine}</div>
+        <div class="lunch-group">
+          ${rawLines.map(line => `<div class="lunch-item">${line}</div>`).join('')}
+        </div>
+      `;
+      const summaryText = real.prices && real.prices[0]
+        ? `Tänään: ${real.prices[0].label} ${real.prices[0].price}`
+        : 'Lounaslista saatavilla tänään';
+      return lunchToggleWrapper(summaryText, detail);
+    }
+
+    // parseStatus === 'ok': täysin jäsennelty (esim. Poweresta-PDF)
+    const categoryOrder = ['Pääruoaksi', 'Pääruoan kaveriksi', 'Keitto', 'Jälkiruoka'];
+    const sections = real.sections || {};
+    const groupsHtml = categoryOrder
+      .filter(c => sections[c] && sections[c].length)
+      .map(c => `
+        <div class="lunch-group">
+          <span class="lunch-group-label">${c}</span>
+          ${sections[c].map(item => `<div class="lunch-item">${item.name} ${allergenBadges(item.allergens || [])}</div>`).join('')}
+        </div>
+      `).join('');
+    const detail = `<div class="lunch-prices">${priceLine}</div>${groupsHtml}`;
+
+    const mains = sections['Pääruoaksi'] || [];
+    const moreMains = Math.max(0, mains.length - 1);
+    const firstMain = mains[0] ? mains[0].name : '';
+    const firstPrice = real.prices && real.prices[0] ? real.prices[0].price : '';
+    const summaryText = `Tänään: ${firstPrice}${firstMain ? ' · ' + firstMain : ''}${moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : ''}`;
+    return lunchToggleWrapper(summaryText, detail);
+  }
+
+  // 2) Ei vielä oikeaa dataa tälle ravintolalle (esim. menuSources-riviä ei ole
+  // lisätty, tai Firebase ei ole käytössä) -> demon keksitty mock-data samalla
+  // kaksitasoisella esitystavalla, jotta UI-mekaniikka näkyy silti.
   const mockParseStatus = (hashStr(r.id) % 2 === 0) ? 'ok' : 'partial';
 
   if (mockParseStatus === 'partial') {
