@@ -1580,9 +1580,9 @@ function renderList() {
 function renderFavorites() {
   const el = document.getElementById('favView');
   const favs = restaurants
-    .filter(r => isFav(r.id) && matchesFilters(r))
+    .filter(r => isFav(r.id))
     .sort((a, b) => getRating(b.id) - getRating(a.id) || a.name.localeCompare(b.name, 'fi'));
-  el.innerHTML = favs.map(cardHtml).join('') || '<p class="empty-hint">Ei vielä suosikkeja, tai suodattimet piilottavat ne. Tarkista Suodata.</p>';
+  el.innerHTML = favs.map(cardHtml).join('') || '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
 }
 
 function focusOnMap(id) {
