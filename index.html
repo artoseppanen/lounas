@@ -8,6 +8,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Firebase (valinnainen): toimii vasta kun FIREBASE_CONFIG alla on täytetty
+     oikeilla arvoilla omasta Firebase-projektistasi. Ennen sitä sovellus
+     toimii täsmälleen kuten ennenkin (suora Overpass-haku, paikallinen demo). -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <style>
   :root {
     --ink: #1c2b24;
@@ -866,6 +873,64 @@
 </div>
 
 <script>
+// ============================================================================
+// FIREBASE (valinnainen taustapalvelu)
+// ============================================================================
+// Täytä oman Firebase-projektisi config-arvot alle (Firebase Console ->
+// Project settings -> General -> "Your apps" -> Web app). Kunnes teet niin,
+// FIREBASE_ENABLED pysyy false:na ja koko sovellus toimii täsmälleen kuten
+// ennenkin (suora Overpass-haku + paikallinen simuloitu keskiarvo + localStorage).
+//
+// Kun täytät oikeat arvot: ravintolat luetaan Firestoresta (jonka ajastettu
+// Cloud Function pitää ajan tasalla, ks. functions/index.js), arviot
+// kirjoitetaan oikeasti jaettuun tietokantaan, ja suosikit tallentuvat
+// käyttäjän omaan, anonyymiin Firebase-tiliin selaimen sijaan.
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDKTpHd8AD-ucBB_XqKg_wOzmg_81IitKk",
+  authDomain: "lounas-appis.firebaseapp.com",
+  projectId: "lounas-appis",
+  storageBucket: "lounas-appis.firebasestorage.app",
+  messagingSenderId: "672543513943",
+  appId: "1:672543513943:web:c15ca04a1f26cd8b68b212"
+};
+const FIREBASE_ENABLED = FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+
+let fbAuth = null;
+let fbDb = null;
+let fbUid = null;
+// Tämä promise ratkeaa kun anonyymi kirjautuminen on valmis (tai heti, jos
+// Firebase ei ole käytössä) — muut funktiot odottavat tätä ennen tietokantakutsuja.
+let fbReady = Promise.resolve();
+
+if (FIREBASE_ENABLED) {
+  firebase.initializeApp(FIREBASE_CONFIG);
+
+  // App Check: suojaa Firestore/Functions-kutsut niin että ne hyväksytään
+  // vain tästä oikeasta sivustosta, ei käsin kirjoitetuista skripteistä.
+  // Täytä RECAPTCHA_SITE_KEY reCAPTCHA v3:n Site keylläsi (google.com/recaptcha/admin).
+  // isTokenAutoRefreshEnabled:true pitää App Check -tokenin voimassa koko istunnon ajan.
+  const RECAPTCHA_SITE_KEY = "6Lci1tMtAAAAAFhhWAblQtruGJU0fsdBFI8vLetg";
+  if (RECAPTCHA_SITE_KEY !== "YOUR_RECAPTCHA_SITE_KEY") {
+    firebase.appCheck().activate(RECAPTCHA_SITE_KEY, true);
+  }
+
+  fbAuth = firebase.auth();
+  fbDb = firebase.firestore();
+  fbReady = new Promise((resolve) => {
+    fbAuth.onAuthStateChanged(user => {
+      if (user) {
+        fbUid = user.uid;
+        resolve();
+      } else {
+        fbAuth.signInAnonymously().catch(err => {
+          console.error('Firebase anonyymi kirjautuminen epäonnistui:', err);
+          resolve(); // jatketaan silti ilman backendiä kaatumatta
+        });
+      }
+    });
+  });
+}
+
 // Oikea Overpass-haku. Julkinen, avoin rajapinta, ei API-avainta.
 // HUOM tuotannossa: älä anna sovelluksen jokaisen käyttäjän kutsua julkista
 // overpass-api.de -instanssia suoraan (usage policy kieltää raskaan pollauksen).
@@ -1007,8 +1072,58 @@ function saveToCache(list) {
   } catch (e) {}
 }
 
+async function loadFromFirestore() {
+  const snap = await fbDb.collection('restaurants').get();
+  if (snap.empty) return null;
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function loadUserDataFromFirestore() {
+  // Suosikit
+  const favSnap = await fbDb.collection('users').doc(fbUid).collection('favorites').get();
+  favSnap.forEach(doc => {
+    userData[doc.id] = userData[doc.id] || {};
+    userData[doc.id].fav = true;
+  });
+  // Omat arviot (collectionGroup-kysely löytää kaikki ravintolat joissa tällä
+  // käyttäjällä on arvio, riippumatta ravintolan id:stä)
+  const ratingSnap = await fbDb.collectionGroup('ratings').where('userId', '==', fbUid).get();
+  ratingSnap.forEach(doc => {
+    const restaurantId = doc.ref.parent.parent.id;
+    userData[restaurantId] = userData[restaurantId] || {};
+    userData[restaurantId].rating = doc.data().rating;
+  });
+  saveUserData();
+}
+
 async function loadAllRestaurantsOnce() {
   const status = document.getElementById('status');
+
+  if (FIREBASE_ENABLED) {
+    setLoadingBanner('loading');
+    status.textContent = "· haetaan…";
+    try {
+      await fbReady;
+      await loadUserDataFromFirestore();
+      const fromFirestore = await loadFromFirestore();
+      if (fromFirestore) {
+        restaurants = fromFirestore;
+        rebuildMarkers();
+        applyFiltersToMap();
+        updateHeaderInfo();
+        renderList();
+        renderFavorites();
+        updateFavTabLabel();
+        setLoadingBanner('done');
+        status.textContent = "";
+        return;
+      }
+      // Firestoressa ei vielä dataa (esim. syncRestaurants-funktiota ei ole
+      // vielä ajettu kertaakaan) -> jatketaan alla olevaan Overpass-fallbackiin.
+    } catch (err) {
+      console.error('Firestore-haku epäonnistui, käytetään Overpass-fallbackia:', err);
+    }
+  }
 
   const cached = loadFromCache();
   if (cached) {
@@ -1157,11 +1272,17 @@ function seedCommunityIfNeeded(id) {
   communityRatings[id] = { sum: Math.round(avgSeed * count), count };
 }
 function getCommunityAvg(id) {
+  const r = restaurants.find(x => x.id === id);
+  if (r && typeof r.ratingSum === 'number' && typeof r.ratingCount === 'number') {
+    return r.ratingCount > 0 ? r.ratingSum / r.ratingCount : 0;
+  }
   seedCommunityIfNeeded(id);
   const c = communityRatings[id];
   return c.count > 0 ? c.sum / c.count : 0;
 }
 function getCommunityCount(id) {
+  const r = restaurants.find(x => x.id === id);
+  if (r && typeof r.ratingCount === 'number') return r.ratingCount;
   seedCommunityIfNeeded(id);
   return communityRatings[id].count;
 }
@@ -1431,16 +1552,77 @@ function generateMockLunch(r) {
   return { mains, sides, soup, dessert, priceBuffet, priceSoup };
 }
 
+// Vastaa backendin parseStatus:"partial" -tapausta (esim. Linkosuo): hinnat
+// saadaan rakenteisena, loppu vain yhtenä tekstilohkona sellaisenaan — myös
+// mahdollinen englanninkielinen kaksoiskappale näytetään mukana, ei suodateta
+// pois, koska sitä ei voi luotettavasti erottaa (ks. keskustelu).
+function generateMockLunchRaw(r) {
+  const seed = hashStr(r.id + todayDateStr());
+  const pick = (arr, salt) => arr[(seed + salt) % arr.length];
+  const priceBuffet = (12 + (seed % 4)) + ' €';
+  const priceSoup = (9 + (seed % 3)) + ',80 €';
+  const lines = [
+    `${pick(MOCK_MAINS, 1)} ${pick(MOCK_ALLERGEN_SETS, 2).join(',')} & ${pick(MOCK_SIDES, 3)} ${pick(MOCK_ALLERGEN_SETS, 4).join(',')}`,
+    `${pick(MOCK_MAINS, 5)} ${pick(MOCK_ALLERGEN_SETS, 6).join(',')}`,
+    `${pick(MOCK_SOUPS, 7)} ${pick(MOCK_ALLERGEN_SETS, 8).join(',')}`,
+    `JÄLKIRUUAKSI: ${pick(MOCK_DESSERTS, 9)} ${pick(MOCK_ALLERGEN_SETS, 10).join(',')}`,
+  ];
+  return {
+    prices: [
+      { label: 'Buffetlounas', price: priceBuffet },
+      { label: 'Keittolounas', price: priceSoup },
+    ],
+    rawText: lines.join('\n'),
+  };
+}
+
 function allergenBadges(codes) {
   return codes.map(c => `<span class="allergen-badge">${c}</span>`).join('');
 }
 
+// Yhteinen kääre tiivis-rivi + laajennettu-näkymä -mekaniikalle, käytetään
+// molemmissa haaroissa (jäsennelty "ok" ja raaka "partial") samalla tavalla.
+// HUOM: tiivistelmätekstiä (summaryText) ei tällä hetkellä katkaista pituuden
+// mukaan — jos ruokanimet ovat pitkiä, rivi voi venyä. Merkkimäärän rajausta
+// (esim. CSS text-overflow:ellipsis tai JS-katkaisu "..." -päätteellä) voi
+// säätää myöhemmin kun nähdään miltä oikea data näyttää käytännössä.
+function lunchToggleWrapper(summaryText, detailHtml) {
+  return `<div class="lunch-summary">
+    <button type="button" class="lunch-toggle" aria-expanded="false" onclick="event.stopPropagation(); toggleLunchDetail(this)">
+      <span class="lunch-toggle-text">${summaryText}</span>
+      <svg class="lunch-chevron" viewBox="0 0 24 24" width="12" height="12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+    <div class="lunch-detail">${detailHtml}</div>
+  </div>`;
+}
+
 function lunchSummaryHtml(r) {
   if (!r.website || !isWeekdayToday()) return '';
+
+  // Demossa jaetaan ravintolat deterministisesti kahteen ryhmään simuloimaan
+  // sitä että oikeassa backendissä osa ravintoloista jäsentyy täysin
+  // (parseStatus "ok", esim. Poweresta) ja osa vain hintojen osalta
+  // (parseStatus "partial", esim. Linkosuo) — sama ravintola pysyy aina
+  // samassa ryhmässä, jotta demo tuntuu johdonmukaiselta.
+  const mockParseStatus = (hashStr(r.id) % 2 === 0) ? 'ok' : 'partial';
+
+  if (mockParseStatus === 'partial') {
+    const menu = generateMockLunchRaw(r);
+    const priceLine = menu.prices.map(p => `${p.label} ${p.price}`).join(' · ');
+    const detail = `
+      <div class="lunch-prices">${priceLine}</div>
+      <div class="lunch-group">
+        ${menu.rawText.split('\n').map(line => `<div class="lunch-item">${line}</div>`).join('')}
+      </div>
+    `;
+    return lunchToggleWrapper(`Tänään: ${menu.prices[0].label} ${menu.prices[0].price}`, detail);
+  }
+
   const menu = generateMockLunch(r);
   const moreMains = menu.mains.length - 1;
   const moreText = moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : '';
-
   const detail = `
     <div class="lunch-prices">Lounasbuffet ${menu.priceBuffet} · Keittolounas ${menu.priceSoup}</div>
     <div class="lunch-group">
@@ -1460,16 +1642,7 @@ function lunchSummaryHtml(r) {
       <div class="lunch-item">${menu.dessert.name} ${allergenBadges(menu.dessert.allergens)}</div>
     </div>
   `;
-
-  return `<div class="lunch-summary">
-    <button type="button" class="lunch-toggle" aria-expanded="false" onclick="event.stopPropagation(); toggleLunchDetail(this)">
-      <span class="lunch-toggle-text">Tänään: ${menu.priceBuffet} · ${menu.mains[0].name}${moreText}</span>
-      <svg class="lunch-chevron" viewBox="0 0 24 24" width="12" height="12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/>
-      </svg>
-    </button>
-    <div class="lunch-detail">${detail}</div>
-  </div>`;
+  return lunchToggleWrapper(`Tänään: ${menu.priceBuffet} · ${menu.mains[0].name}${moreText}`, detail);
 }
 function toggleLunchDetail(btn) {
   const wrap = btn.closest('.lunch-summary');
@@ -1505,27 +1678,56 @@ function toggleFav(id) {
   userData[id].fav = !userData[id].fav;
   saveUserData();
   refreshAfterUserAction(id);
+
+  if (FIREBASE_ENABLED) {
+    fbReady.then(() => {
+      const ref = fbDb.collection('users').doc(fbUid).collection('favorites').doc(id);
+      if (userData[id].fav) {
+        ref.set({ addedAt: firebase.firestore.FieldValue.serverTimestamp() })
+          .catch(err => console.error('Suosikin tallennus epäonnistui:', err));
+      } else {
+        ref.delete().catch(err => console.error('Suosikin poisto epäonnistui:', err));
+      }
+    });
+  }
 }
 window.toggleFav = toggleFav;
 
 function setRating(id, val) {
   userData[id] = userData[id] || {};
   const prev = userData[id].rating || 0;
-  seedCommunityIfNeeded(id);
-  const c = communityRatings[id];
+  const newVal = (val === prev) ? 0 : val; // sama tähti uudelleen -> nollataan oma arvio
 
-  if (val === prev) {
-    // sama tähti uudelleen -> poistetaan oma arvio kokonaan yhteisökeskiarvosta
-    if (prev > 0) { c.sum -= prev; c.count = Math.max(0, c.count - 1); }
-    userData[id].rating = 0;
+  if (FIREBASE_ENABLED) {
+    // Kirjoitetaan VAIN oma arvio Firestoreen — Cloud Function (onRatingWrite)
+    // laskee ratingSum/ratingCount-aggregaatin palvelinpuolella luotettavasti,
+    // asiakas ei koskaan itse kirjoita niitä (ks. firestore.rules).
+    fbReady.then(() => {
+      const ref = fbDb.collection('restaurants').doc(id).collection('ratings').doc(fbUid);
+      const write = newVal > 0
+        ? ref.set({ rating: newVal, userId: fbUid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+        : ref.delete();
+      write.catch(err => console.error('Arvion tallennus epäonnistui:', err));
+    });
+    // Optimistinen paikallinen päivitys heti, jotta UI tuntuu välittömältä —
+    // sama laskusääntö kuin Cloud Functionilla, korjaantuu joka tapauksessa
+    // seuraavalla datan latauksella jos joku muu arvioi täsmälleen samalla hetkellä.
+    const r = restaurants.find(x => x.id === id);
+    if (r && typeof r.ratingSum === 'number') {
+      if (prev > 0) r.ratingSum -= prev, r.ratingCount = Math.max(0, r.ratingCount - 1);
+      if (newVal > 0) r.ratingSum += newVal, r.ratingCount += 1;
+    }
   } else {
-    if (prev > 0) c.sum = c.sum - prev + val;   // korvataan aiempi oma arvio
-    else { c.sum += val; c.count += 1; }        // ensimmäinen oma arvio tälle ravintolalle
-    userData[id].rating = val;
+    // Ei backendiä: sama paikallinen simulointi kuin ennenkin.
+    seedCommunityIfNeeded(id);
+    const c = communityRatings[id];
+    if (prev > 0) { c.sum -= prev; c.count = Math.max(0, c.count - 1); }
+    if (newVal > 0) { c.sum += newVal; c.count += 1; }
+    saveCommunityRatings();
   }
 
+  userData[id].rating = newVal;
   saveUserData();
-  saveCommunityRatings();
   refreshAfterUserAction(id);
 }
 window.setRating = setRating;
