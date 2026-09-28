@@ -84,6 +84,7 @@
     margin-left: 2px;
     font-weight: 400;
   }
+  .filter-btn .count:empty { display: none; }
   .loading-banner {
     display: none;
     align-items: center;
@@ -159,7 +160,17 @@
   .filter-btn-sidebar {
     display: none;
     padding: 8px 10px;
+    background: #fff;
+    color: var(--ink);
+    border: 1px solid var(--ink);
   }
+  .filter-btn-sidebar .count { color: var(--ink); }
+  .filter-btn-sidebar.active-filters {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .filter-btn-sidebar.active-filters .count { color: var(--paper); }
   .seg-btn {
     flex: 1;
     padding: 7px 0;
@@ -742,7 +753,7 @@
   </div>
   <button class="filter-btn" id="openFilter" aria-haspopup="dialog" aria-expanded="false">
     <svg class="filter-icon" viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10M10 19h4"/>
+      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z"/>
     </svg>
     Suodata<span class="count" id="filterCount"></span>
   </button>
@@ -783,7 +794,7 @@
             </div>
             <button class="filter-btn filter-btn-sidebar" id="openFilterSidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Suodata ravintoloita">
               <svg class="filter-icon" viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 5h16M7 12h10M10 19h4"/>
+                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M3 4h18l-7 8.5V19l-4 2v-8.5L3 4z"/>
               </svg>
               <span class="count" id="filterCountSidebar"></span>
             </button>
@@ -1099,6 +1110,7 @@ function applyFiltersToMap() {
   const countText = count > 0 ? ` (${count})` : '';
   document.getElementById('filterCount').textContent = countText;
   document.getElementById('filterCountSidebar').textContent = countText;
+  document.getElementById('openFilterSidebar').classList.toggle('active-filters', count > 0);
   updateFilterApplyButton();
 }
 
