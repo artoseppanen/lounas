@@ -1095,12 +1095,22 @@ async function loadUserDataFromFirestore() {
     userData[id].fav = true;
   });
   // Omat arviot (collectionGroup-kysely löytää kaikki ravintolat joissa tällä
-  // käyttäjällä on arvio, riippumatta ravintolan id:stä)
+  // käyttäjällä on arvio, riippumatta ravintolan id:stä). Tämä on täysi
+  // synkronointi Firestoresta: jos paikallisesti (localStorage) on jäänyt
+  // muistiin oma arvio jota palvelimelta ei enää löydy (esim. joku on
+  // poistanut arviot ylläpidon toimesta), se nollataan myös täältä.
+  const idsWithRealRating = new Set();
   const ratingSnap = await fbDb.collectionGroup('ratings').where('userId', '==', fbUid).get();
   ratingSnap.forEach(doc => {
     const restaurantId = unsanitizeFirestoreId(doc.ref.parent.parent.id);
+    idsWithRealRating.add(restaurantId);
     userData[restaurantId] = userData[restaurantId] || {};
     userData[restaurantId].rating = doc.data().rating;
+  });
+  Object.keys(userData).forEach(id => {
+    if (userData[id].rating && !idsWithRealRating.has(id)) {
+      userData[id].rating = 0;
+    }
   });
   saveUserData();
 }
