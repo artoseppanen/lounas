@@ -105,8 +105,8 @@
   .loading-banner.visible { display: flex; }
   .loading-banner.error { color: #5b6a61; }
   .chef-icon {
-    font-size: 18px;
     display: inline-block;
+    color: var(--ink);
     animation: chefWalk 1.1s ease-in-out infinite;
   }
   .loading-banner.error .chef-icon { animation: none; display: none; }
@@ -767,7 +767,15 @@
 </header>
 
 <div id="loadingBanner" class="loading-banner" role="status" aria-live="polite">
-  <span class="chef-icon">🧑‍🍳</span>
+  <span class="chef-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="19" height="19" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="9" width="12" height="10" fill="currentColor"/>
+      <rect x="5" y="18" width="14" height="4" rx="1" fill="currentColor"/>
+      <circle cx="8" cy="10" r="4" fill="currentColor"/>
+      <circle cx="12" cy="7" r="5" fill="currentColor"/>
+      <circle cx="16" cy="10" r="4" fill="currentColor"/>
+    </svg>
+  </span>
   <span class="error-icon" aria-hidden="true">
     <svg viewBox="0 0 24 24" width="18" height="18">
       <circle cx="12" cy="12" r="11" fill="#c0392b"/>
@@ -775,7 +783,7 @@
       <rect x="11" y="16" width="2" height="2" fill="#fff"/>
     </svg>
   </span>
-  <span class="loading-text">Haetaan ravintolat</span>
+  <span class="loading-text">Haetaan ravintolat…</span>
 </div>
 
 <main>
@@ -1037,7 +1045,7 @@ function setLoadingBanner(state, text) {
   const el = document.getElementById('loadingBanner');
   const textEl = el.querySelector('.loading-text');
   if (state === 'loading') {
-    textEl.textContent = text || 'Haetaan ravintolat';
+    textEl.textContent = text || 'Haetaan ravintolat…';
     el.classList.remove('error');
     el.classList.add('visible');
   } else if (state === 'error') {
@@ -1133,73 +1141,83 @@ async function loadDailyMenusFromFirestore() {
 
 async function loadAllRestaurantsOnce() {
   const status = document.getElementById('status');
+  try {
+    if (FIREBASE_ENABLED) {
+      setLoadingBanner('loading');
+      status.textContent = "· haetaan…";
+      try {
+        await fbReady;
+        await loadUserDataFromFirestore();
+        const fromFirestore = await loadFromFirestore();
+        if (fromFirestore) {
+          restaurants = fromFirestore;
+          await loadDailyMenusFromFirestore();
+          rebuildMarkers();
+          applyFiltersToMap();
+          updateHeaderInfo();
+          renderList();
+          renderFavorites();
+          updateFavTabLabel();
+          setLoadingBanner('done');
+          status.textContent = "";
+          return;
+        }
+        // Firestoressa ei vielä dataa (esim. syncRestaurants-funktiota ei ole
+        // vielä ajettu kertaakaan) -> jatketaan alla olevaan Overpass-fallbackiin.
+      } catch (err) {
+        console.error('Firestore-haku epäonnistui, käytetään Overpass-fallbackia:', err);
+      }
+    }
 
-  if (FIREBASE_ENABLED) {
+    const cached = loadFromCache();
+    if (cached) {
+      restaurants = cached.restaurants;
+      if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
+      rebuildMarkers();
+      applyFiltersToMap();
+      updateHeaderInfo();
+      renderList();
+      renderFavorites();
+      updateFavTabLabel();
+      setLoadingBanner('done');
+      status.textContent = "";
+      return;
+    }
+
     setLoadingBanner('loading');
     status.textContent = "· haetaan…";
     try {
-      await fbReady;
-      await loadUserDataFromFirestore();
-      const fromFirestore = await loadFromFirestore();
-      if (fromFirestore) {
-        restaurants = fromFirestore;
-        await loadDailyMenusFromFirestore();
-        rebuildMarkers();
-        applyFiltersToMap();
-        updateHeaderInfo();
-        renderList();
-        renderFavorites();
-        updateFavTabLabel();
-        setLoadingBanner('done');
-        status.textContent = "";
-        return;
-      }
-      // Firestoressa ei vielä dataa (esim. syncRestaurants-funktiota ei ole
-      // vielä ajettu kertaakaan) -> jatketaan alla olevaan Overpass-fallbackiin.
+      const query = buildQuery(TAMPERE_BBOX);
+      const res = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query)
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      restaurants = data.elements
+        .map(elementToRestaurant)
+        .filter(r => r.lat && r.lon);
+      saveToCache(restaurants);
+      if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
+      rebuildMarkers();
+      applyFiltersToMap();
+      updateHeaderInfo();
+      renderList();
+      renderFavorites();
+      updateFavTabLabel();
+      setLoadingBanner('done');
+      status.textContent = "";
     } catch (err) {
-      console.error('Firestore-haku epäonnistui, käytetään Overpass-fallbackia:', err);
+      setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
+      status.textContent = "";
     }
-  }
-
-  const cached = loadFromCache();
-  if (cached) {
-    restaurants = cached.restaurants;
-    if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
-    rebuildMarkers();
-    applyFiltersToMap();
-    updateHeaderInfo();
-    renderList();
-    renderFavorites();
-    updateFavTabLabel();
-    status.textContent = "";
-    return;
-  }
-
-  setLoadingBanner('loading');
-  status.textContent = "· haetaan…";
-  try {
-    const query = buildQuery(TAMPERE_BBOX);
-    const res = await fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "data=" + encodeURIComponent(query)
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    restaurants = data.elements
-      .map(elementToRestaurant)
-      .filter(r => r.lat && r.lon);
-    saveToCache(restaurants);
-    if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
-    rebuildMarkers();
-    applyFiltersToMap();
-    updateHeaderInfo();
-    renderList();
-    renderFavorites();
-    updateFavTabLabel();
-    setLoadingBanner('done');
-    status.textContent = "";
-  } catch (err) {
+  } catch (outerErr) {
+    // Viimeinen turvaverkko: jos jokin yllä olevista haaroista heittää
+    // odottamattoman virheen jota sisempi try/catch ei jo käsitellyt,
+    // varmistetaan silti ettei latausbanneri jää ikuisesti jumiin "Haetaan..."
+    // -tilaan.
+    console.error('Odottamaton virhe ravintoloiden latauksessa:', outerErr);
     setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
     status.textContent = "";
   }
