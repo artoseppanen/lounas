@@ -793,6 +793,15 @@
 
       <div id="listView">
         <div class="list-toolbar">
+          <div class="search-wrap">
+            <label for="nameSearch" class="visually-hidden">Hae ravintolaa nimellä</label>
+            <input type="search" id="nameSearch" class="name-search" placeholder="Hae ravintolaa nimellä" autocomplete="off">
+            <button type="button" class="search-clear" id="searchClear" aria-label="Tyhjennä haku">×</button>
+            <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
+              <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
           <div class="segment-row">
             <div class="segment">
               <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
@@ -804,15 +813,6 @@
               </svg>
               <span class="count" id="filterCountSidebar"></span>
             </button>
-          </div>
-          <div class="search-wrap">
-            <label for="nameSearch" class="visually-hidden">Hae ravintolaa nimellä</label>
-            <input type="search" id="nameSearch" class="name-search" placeholder="Hae ravintolaa nimellä" autocomplete="off">
-            <button type="button" class="search-clear" id="searchClear" aria-label="Tyhjennä haku">×</button>
-            <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
-              <line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
           </div>
           <div class="list-count" role="status" aria-live="polite">
             <b id="countNum">0</b> <span id="countLabel">ravintolaa näkyvissä</span>
@@ -1756,7 +1756,11 @@ function visibleRestaurants() {
 }
 
 function currentListRestaurants() {
-  return (listFilterMode === 'all' ? restaurants : visibleRestaurants()).filter(matchesFilters);
+  // Nimihaku etsii AINA kaikista ravintoloista riippumatta "Kartalla näkyvät"
+  // / "Kaikki ravintolat" -valinnasta — vain muut suodattimet (tyyppi,
+  // arvosana, aukiolo) kunnioittavat edelleen sitä valintaa, kuten ennenkin.
+  const base = nameQuery.length >= 2 ? restaurants : (listFilterMode === 'all' ? restaurants : visibleRestaurants());
+  return base.filter(matchesFilters);
 }
 
 function updateHeaderInfo() {
@@ -1797,7 +1801,10 @@ function cardHtml(r) {
 function renderList() {
   const el = document.getElementById('listCards');
   const list = currentListRestaurants();
-  el.innerHTML = list.map(cardHtml).join('') || '<p class="empty-hint">Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.</p>';
+  const emptyHint = nameQuery.length >= 2
+    ? `Ei hakutuloksia haulla "${escapeHtml(nameQuery)}".`
+    : 'Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.';
+  el.innerHTML = list.map(cardHtml).join('') || `<p class="empty-hint">${emptyHint}</p>`;
   updateHeaderInfo();
 }
 
