@@ -1301,15 +1301,23 @@ function getRating(id) { return (userData[id] && userData[id].rating) || 0; }
 // ravintola nähdään ensimmäistä kertaa - oikeat arviot lisääntyvät sen
 // PÄÄLLE samaan kenttään (onRatingWrite), joten täällä ei enää tarvita
 // erillistä mock-järjestelmää tai localStoragea tätä varten.
+// Kaikkien arviot = siemen (seedSum/seedCount, kirjoitetaan kerran eikä
+// koskaan muuteta) + oikeat arviot (realRatingSum/realRatingCount, kasvaa sitä
+// mukaa kun ihmiset arvostelevat). Nämä pidetään ERI kenttinä Firestoressa
+// juuri siksi, että siemen voidaan joskus tulevaisuudessa poistaa näytöltä
+// (esim. kun oikeita arvioita on tarpeeksi) koskematta oikeaan dataan mitenkään
+// - silloin tämä funktio vain lakkaa laskemasta seed*-kenttiä mukaan.
 function getCommunityAvg(id) {
   const r = restaurants.find(x => x.id === id);
-  const sum = r && typeof r.ratingSum === 'number' ? r.ratingSum : 0;
-  const count = r && typeof r.ratingCount === 'number' ? r.ratingCount : 0;
+  if (!r) return 0;
+  const sum = (r.seedSum || 0) + (r.realRatingSum || 0);
+  const count = (r.seedCount || 0) + (r.realRatingCount || 0);
   return count > 0 ? sum / count : 0;
 }
 function getCommunityCount(id) {
   const r = restaurants.find(x => x.id === id);
-  return r && typeof r.ratingCount === 'number' ? r.ratingCount : 0;
+  if (!r) return 0;
+  return (r.seedCount || 0) + (r.realRatingCount || 0);
 }
 
 const map = L.map('map', { zoomControl: true }).setView([61.4978, 23.7610], 14);
@@ -1668,8 +1676,8 @@ function setRating(id, val) {
 
   if (FIREBASE_ENABLED) {
     // Kirjoitetaan VAIN oma arvio Firestoreen — Cloud Function (onRatingWrite)
-    // laskee ratingSum/ratingCount-aggregaatin palvelinpuolella luotettavasti,
-    // asiakas ei koskaan itse kirjoita niitä (ks. firestore.rules).
+    // laskee realRatingSum/realRatingCount-aggregaatin palvelinpuolella
+    // luotettavasti, asiakas ei koskaan itse kirjoita niitä (ks. firestore.rules).
     fbReady.then(() => {
       const ref = fbDb.collection('restaurants').doc(sanitizeFirestoreId(id)).collection('ratings').doc(fbUid);
       const write = newVal > 0
@@ -1680,21 +1688,24 @@ function setRating(id, val) {
     // Optimistinen paikallinen päivitys heti, jotta UI tuntuu välittömältä —
     // sama laskusääntö kuin Cloud Functionilla, korjaantuu joka tapauksessa
     // seuraavalla datan latauksella jos joku muu arvioi täsmälleen samalla hetkellä.
+    // HUOM: koskee vain realRatingSum/-Count:ia, ei seedSum/seedCount:ia.
     const r = restaurants.find(x => x.id === id);
-    if (r && typeof r.ratingSum === 'number') {
-      if (prev > 0) r.ratingSum -= prev, r.ratingCount = Math.max(0, r.ratingCount - 1);
-      if (newVal > 0) r.ratingSum += newVal, r.ratingCount += 1;
+    if (r) {
+      r.realRatingSum = r.realRatingSum || 0;
+      r.realRatingCount = r.realRatingCount || 0;
+      if (prev > 0) { r.realRatingSum -= prev; r.realRatingCount = Math.max(0, r.realRatingCount - 1); }
+      if (newVal > 0) { r.realRatingSum += newVal; r.realRatingCount += 1; }
     }
   } else {
     // Ei backendiä (esim. paikallinen testaus ilman Firebase-konfiguraatiota):
-    // päivitetään samat ratingSum/ratingCount-kentät suoraan ravintolan
+    // päivitetään samat realRatingSum/realRatingCount-kentät suoraan ravintolan
     // muistinvaraiseen olioon, ei enää erillistä mock-järjestelmää.
     const r = restaurants.find(x => x.id === id);
     if (r) {
-      r.ratingSum = typeof r.ratingSum === 'number' ? r.ratingSum : 0;
-      r.ratingCount = typeof r.ratingCount === 'number' ? r.ratingCount : 0;
-      if (prev > 0) { r.ratingSum -= prev; r.ratingCount = Math.max(0, r.ratingCount - 1); }
-      if (newVal > 0) { r.ratingSum += newVal; r.ratingCount += 1; }
+      r.realRatingSum = r.realRatingSum || 0;
+      r.realRatingCount = r.realRatingCount || 0;
+      if (prev > 0) { r.realRatingSum -= prev; r.realRatingCount = Math.max(0, r.realRatingCount - 1); }
+      if (newVal > 0) { r.realRatingSum += newVal; r.realRatingCount += 1; }
     }
   }
 
