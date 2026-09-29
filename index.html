@@ -1546,12 +1546,29 @@ function openingHoursHtml(r) {
 
 function normalizeUrl(url) {
   if (!url) return '';
-  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
+  const trimmed = String(url).trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Hylätään eksplisiittisesti muut skeemat (esim. "javascript:", "data:")
+  // sen sijaan että luotettaisiin siihen että https:// eteen lisääminen
+  // sattuisi tekemään niistä harmittomia.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return '';
+  return 'https://' + trimmed;
 }
 
 function websiteLinkHtml(r) {
   if (!r.website) return '';
   return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Verkkosivusto<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
+}
+
+// Ravintolan nimi/tyyppi/osoite tulevat OpenStreetMapista (kuka tahansa voi
+// muokata), ja lounaslistan sisältö ulkopuolisilta nettisivuilta - kumpaakaan
+// ei voi luottaa suoraan. Kaikki tällainen teksti pitää AINA paeta ennen kuin
+// se lisätään innerHTML:ään, tai joku voisi upottaa ravintolan nimeen
+// haitallista HTML/JS-koodia joka suoritettaisiin jokaisen kävijän selaimessa.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
 }
 
 function todayDateStr() { return new Date().toISOString().slice(0, 10); }
@@ -1594,7 +1611,7 @@ function lunchSummaryHtml(r) {
       const detail = `
         <div class="lunch-prices">${priceLine}</div>
         <div class="lunch-group">
-          ${rawLines.map(line => `<div class="lunch-item">${line}</div>`).join('')}
+          ${rawLines.map(line => `<div class="lunch-item">${escapeHtml(line)}</div>`).join('')}
         </div>
       `;
       const summaryText = real.prices && real.prices[0]
@@ -1611,7 +1628,7 @@ function lunchSummaryHtml(r) {
       .map(c => `
         <div class="lunch-group">
           <span class="lunch-group-label">${c}</span>
-          ${sections[c].map(item => `<div class="lunch-item">${item.name} ${allergenBadges(item.allergens || [])}</div>`).join('')}
+          ${sections[c].map(item => `<div class="lunch-item">${escapeHtml(item.name)} ${allergenBadges(item.allergens || [])}</div>`).join('')}
         </div>
       `).join('');
     const detail = `<div class="lunch-prices">${priceLine}</div>${groupsHtml}`;
@@ -1620,7 +1637,7 @@ function lunchSummaryHtml(r) {
     const moreMains = Math.max(0, mains.length - 1);
     const firstMain = mains[0] ? mains[0].name : '';
     const firstPrice = real.prices && real.prices[0] ? real.prices[0].price : '';
-    const summaryText = `Tänään: ${firstPrice}${firstMain ? ' · ' + firstMain : ''}${moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : ''}`;
+    const summaryText = `Tänään: ${firstPrice}${firstMain ? ' · ' + escapeHtml(firstMain) : ''}${moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : ''}`;
     return lunchToggleWrapper(summaryText, detail);
   }
 
@@ -1641,16 +1658,16 @@ const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="
 
 function genreHtml(r) {
   if (r.cuisineUnknown) return '';
-  return `<span class="genre">${r.cuisine}</span>`;
+  return `<span class="genre">${escapeHtml(r.cuisine)}</span>`;
 }
 
 function popupHtml(r) {
   return `<div class="popup-top">
-      <h3>${r.name}</h3>
+      <h3>${escapeHtml(r.name)}</h3>
       ${heartHtml(r.id)}
     </div>
     ${genreHtml(r)}
-    <div class="addr">${r.addr ? ADDR_ICON + ' ' + r.addr : ''}</div>
+    <div class="addr">${r.addr ? ADDR_ICON + ' ' + escapeHtml(r.addr) : ''}</div>
     ${openingHoursHtml(r)}
     ${websiteLinkHtml(r)}
     ${lunchSummaryHtml(r)}
@@ -1758,15 +1775,15 @@ function updateFavTabLabel() {
 
 function cardHtml(r) {
   return `
-    <div class="card" role="button" tabindex="0" aria-label="Näytä ${r.name} kartalla"
+    <div class="card" role="button" tabindex="0" aria-label="Näytä ${escapeHtml(r.name)} kartalla"
       onclick="focusOnMap('${r.id}')"
       onkeydown="if(event.target===event.currentTarget && (event.key==='Enter'||event.key===' ')){event.preventDefault(); focusOnMap('${r.id}');}">
       <div class="card-top">
-        <h3>${r.name}</h3>
+        <h3>${escapeHtml(r.name)}</h3>
         ${heartHtml(r.id)}
       </div>
       ${genreHtml(r)}
-      <p class="addr">${r.addr ? ADDR_ICON + ' ' + r.addr : ''}</p>
+      <p class="addr">${r.addr ? ADDR_ICON + ' ' + escapeHtml(r.addr) : ''}</p>
       ${openingHoursHtml(r)}
       ${websiteLinkHtml(r)}
       ${lunchSummaryHtml(r)}
