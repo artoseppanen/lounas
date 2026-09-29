@@ -1597,7 +1597,7 @@ function lunchToggleWrapper(summaryText, detailHtml) {
 }
 
 function lunchSummaryHtml(r) {
-  if (!r.website || !isWeekdayToday()) return '';
+  if (!isWeekdayToday()) return '';
 
   // 1) Oikea, backendin jäsentämä data (functions/index.js syncDailyMenus) —
   // käytetään aina kun tälle ravintolalle löytyy tämän päivän dokumentti.
