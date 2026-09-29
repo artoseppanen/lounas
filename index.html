@@ -104,20 +104,23 @@
   }
   .loading-banner.visible { display: flex; }
   .loading-banner.error { color: #5b6a61; }
-  .chef-icon {
+  .spinner-icon {
     display: inline-block;
-    color: var(--ink);
-    animation: chefWalk 1.1s ease-in-out infinite;
+    width: 16px;
+    height: 16px;
+    border: 2.5px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
   }
-  .loading-banner.error .chef-icon { animation: none; display: none; }
+  .loading-banner.error .spinner-icon { animation: none; display: none; }
   .error-icon { display: none; align-items: center; }
   .loading-banner.error .error-icon { display: inline-flex; }
-  @keyframes chefWalk {
-    0%, 100% { transform: translateX(0); }
-    50% { transform: translateX(16px); }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .chef-icon { animation: none; }
+    .spinner-icon { animation: none; }
   }
   main {
     flex: 1;
@@ -767,15 +770,7 @@
 </header>
 
 <div id="loadingBanner" class="loading-banner" role="status" aria-live="polite">
-  <span class="chef-icon" aria-hidden="true">
-    <svg viewBox="0 0 24 24" width="19" height="19" xmlns="http://www.w3.org/2000/svg">
-      <rect x="6" y="9" width="12" height="10" fill="currentColor"/>
-      <rect x="5" y="18" width="14" height="4" rx="1" fill="currentColor"/>
-      <circle cx="8" cy="10" r="4" fill="currentColor"/>
-      <circle cx="12" cy="7" r="5" fill="currentColor"/>
-      <circle cx="16" cy="10" r="4" fill="currentColor"/>
-    </svg>
-  </span>
+  <span class="spinner-icon" aria-hidden="true"></span>
   <span class="error-icon" aria-hidden="true">
     <svg viewBox="0 0 24 24" width="18" height="18">
       <circle cx="12" cy="12" r="11" fill="#c0392b"/>
@@ -1700,45 +1695,11 @@ function lunchSummaryHtml(r) {
   }
 
   // 2) Ei vielä oikeaa dataa tälle ravintolalle (esim. menuSources-riviä ei ole
-  // lisätty, tai Firebase ei ole käytössä) -> demon keksitty mock-data samalla
-  // kaksitasoisella esitystavalla, jotta UI-mekaniikka näkyy silti.
-  const mockParseStatus = (hashStr(r.id) % 2 === 0) ? 'ok' : 'partial';
-
-  if (mockParseStatus === 'partial') {
-    const menu = generateMockLunchRaw(r);
-    const priceLine = menu.prices.map(p => `${p.label} ${p.price}`).join(' · ');
-    const detail = `
-      <div class="lunch-prices">${priceLine}</div>
-      <div class="lunch-group">
-        ${menu.rawText.split('\n').map(line => `<div class="lunch-item">${line}</div>`).join('')}
-      </div>
-    `;
-    return lunchToggleWrapper(`Tänään: ${menu.prices[0].label} ${menu.prices[0].price}`, detail);
-  }
-
-  const menu = generateMockLunch(r);
-  const moreMains = menu.mains.length - 1;
-  const moreText = moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : '';
-  const detail = `
-    <div class="lunch-prices">Lounasbuffet ${menu.priceBuffet} · Keittolounas ${menu.priceSoup}</div>
-    <div class="lunch-group">
-      <span class="lunch-group-label">Pääruoka</span>
-      ${menu.mains.map(m => `<div class="lunch-item">${m.name} ${allergenBadges(m.allergens)}</div>`).join('')}
-    </div>
-    <div class="lunch-group">
-      <span class="lunch-group-label">Lisäke</span>
-      ${menu.sides.map(s => `<div class="lunch-item">${s}</div>`).join('')}
-    </div>
-    <div class="lunch-group">
-      <span class="lunch-group-label">Keitto</span>
-      <div class="lunch-item">${menu.soup.name} ${allergenBadges(menu.soup.allergens)}</div>
-    </div>
-    <div class="lunch-group">
-      <span class="lunch-group-label">Jälkiruoka</span>
-      <div class="lunch-item">${menu.dessert.name} ${allergenBadges(menu.dessert.allergens)}</div>
-    </div>
-  `;
-  return lunchToggleWrapper(`Tänään: ${menu.priceBuffet} · ${menu.mains[0].name}${moreText}`, detail);
+  // lisätty tai active=FALSE) -> ei näytetä lounaslohkoa lainkaan. "Lounaslista ↗"
+  // -linkki jää edelleen näkyviin (ks. websiteLinkHtml), joten käyttäjä pääsee
+  // silti tarkistamaan listan itse.
+  return '';
+}
 }
 function toggleLunchDetail(btn) {
   const wrap = btn.closest('.lunch-summary');
