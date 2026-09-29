@@ -1562,23 +1562,6 @@ function websiteLinkHtml(r) {
   return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Lounaslista<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
 }
 
-// --- DEMO: tämän päivän lounaslista ---
-// Oikeassa toteutuksessa tämä data tulisi backendin jäsentämänä (ks. selitys
-// keskustelussa), ei koskaan suoraan selaimesta parsittuna. Tässä demossa
-// tuotetaan uskottava mutta täysin keksitty päivän lounaslista deterministisesti
-// ravintolan id:stä ja tämän päivän päivämäärästä, jotta UI-mekaniikkaa
-// (tiivis rivi -> laajennettu näkymä) voi kokeilla oikeasti.
-const MOCK_MAINS = [
-  "Paneroitua turskaa sitruunavoissa", "Parmesaanilla kuorrutettua kananfileetä tomaattikastikkeessa",
-  "Sitruunainen härkäpaputagine", "Talon omat lihapullat kermaisella kastikkeella",
-  "Rapeita mustapapupihvejä vihannespedillä", "Broiler gyros paahdetuilla vihanneksilla",
-  "Riistakäristystä ja puolukkasurvosta", "Sticky-kananpoikaa"
-];
-const MOCK_SIDES = ["Tilli-voiperunat", "Kurkumariisi", "Yrttipaahdetut juurekset", "Rosmariiniperunat", "Paprikariisi", "Basmatiriisi"];
-const MOCK_SOUPS = ["Lehtikaalikeitto", "Kermainen lohikeitto", "Perinteinen hernekeitto", "Porkkana-kookoskeitto", "Minestronekeitto"];
-const MOCK_DESSERTS = ["Vaniljakermavaahtoa ja mansikkahilloa", "Geisharahkaa", "Vadelma-lakritsirahka", "Mutakakku", "Sitruunaleivos"];
-const MOCK_ALLERGEN_SETS = [["G", "M"], ["L"], ["Veg", "G"], ["KM"], ["G", "L"], ["M"]];
-
 function hashStr(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -1586,46 +1569,6 @@ function hashStr(s) {
 }
 function todayDateStr() { return new Date().toISOString().slice(0, 10); }
 function isWeekdayToday() { const d = new Date().getDay(); return d >= 1 && d <= 5; }
-
-function generateMockLunch(r) {
-  const seed = hashStr(r.id + todayDateStr());
-  const pick = (arr, salt) => arr[(seed + salt) % arr.length];
-  const mainCount = 2 + (seed % 2); // 2 tai 3 pääruokavaihtoehtoa
-  const mains = [];
-  for (let i = 0; i < mainCount; i++) {
-    mains.push({ name: pick(MOCK_MAINS, i * 7 + 1), allergens: pick(MOCK_ALLERGEN_SETS, i * 3 + 2) });
-  }
-  const sides = [...new Set([pick(MOCK_SIDES, 11), pick(MOCK_SIDES, 19)])];
-  const soup = { name: pick(MOCK_SOUPS, 5), allergens: pick(MOCK_ALLERGEN_SETS, 6) };
-  const dessert = { name: pick(MOCK_DESSERTS, 9), allergens: pick(MOCK_ALLERGEN_SETS, 10) };
-  const priceBuffet = (12 + (seed % 4)) + ',95 €';
-  const priceSoup = (9 + (seed % 3)) + ',50 €';
-  return { mains, sides, soup, dessert, priceBuffet, priceSoup };
-}
-
-// Vastaa backendin parseStatus:"partial" -tapausta (esim. Linkosuo): hinnat
-// saadaan rakenteisena, loppu vain yhtenä tekstilohkona sellaisenaan — myös
-// mahdollinen englanninkielinen kaksoiskappale näytetään mukana, ei suodateta
-// pois, koska sitä ei voi luotettavasti erottaa (ks. keskustelu).
-function generateMockLunchRaw(r) {
-  const seed = hashStr(r.id + todayDateStr());
-  const pick = (arr, salt) => arr[(seed + salt) % arr.length];
-  const priceBuffet = (12 + (seed % 4)) + ' €';
-  const priceSoup = (9 + (seed % 3)) + ',80 €';
-  const lines = [
-    `${pick(MOCK_MAINS, 1)} ${pick(MOCK_ALLERGEN_SETS, 2).join(',')} & ${pick(MOCK_SIDES, 3)} ${pick(MOCK_ALLERGEN_SETS, 4).join(',')}`,
-    `${pick(MOCK_MAINS, 5)} ${pick(MOCK_ALLERGEN_SETS, 6).join(',')}`,
-    `${pick(MOCK_SOUPS, 7)} ${pick(MOCK_ALLERGEN_SETS, 8).join(',')}`,
-    `JÄLKIRUUAKSI: ${pick(MOCK_DESSERTS, 9)} ${pick(MOCK_ALLERGEN_SETS, 10).join(',')}`,
-  ];
-  return {
-    prices: [
-      { label: 'Buffetlounas', price: priceBuffet },
-      { label: 'Keittolounas', price: priceSoup },
-    ],
-    rawText: lines.join('\n'),
-  };
-}
 
 function allergenBadges(codes) {
   return codes.map(c => `<span class="allergen-badge">${c}</span>`).join('');
@@ -1699,7 +1642,6 @@ function lunchSummaryHtml(r) {
   // -linkki jää edelleen näkyviin (ks. websiteLinkHtml), joten käyttäjä pääsee
   // silti tarkistamaan listan itse.
   return '';
-}
 }
 function toggleLunchDetail(btn) {
   const wrap = btn.closest('.lunch-summary');
