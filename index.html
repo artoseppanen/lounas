@@ -303,10 +303,6 @@
     border-radius: 999px;
     white-space: nowrap;
   }
-  .genre-plain {
-    font-size: 11.5px;
-    color: #5b6a61;
-  }
   .addr {
     margin: 5px 0 0;
     font-size: 12.5px;
@@ -1299,43 +1295,21 @@ function saveUserData() {
 function isFav(id) { return !!(userData[id] && userData[id].fav); }
 function getRating(id) { return (userData[id] && userData[id].rating) || 0; }
 
-// --- DEMO: simuloitu yhteisön keskiarvo ---
-// Oikeassa toteutuksessa tämä data tulisi backendistä (esim. Firestore/Supabase),
-// koska muiden käyttäjien arviot eivät voi asua pelkässä selaimen localStoragessa.
-// Tässä demossa "muiden arviot" on generoitu deterministisesti ravintolan id:stä,
-// jotta jokainen ravintola näyttää uskottavan mutta kiinteän lähtötilanteen, ja
-// oma arviosi lasketaan oikeasti mukaan keskiarvoon kun arvostelet.
-let communityRatings = {};
-try {
-  communityRatings = JSON.parse(localStorage.getItem('tampereLounasCommunityRatings') || '{}');
-} catch (e) {
-  communityRatings = {};
-}
-function saveCommunityRatings() {
-  try { localStorage.setItem('tampereLounasCommunityRatings', JSON.stringify(communityRatings)); } catch (e) {}
-}
-function seedCommunityIfNeeded(id) {
-  if (communityRatings[id]) return;
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  const count = 3 + (hash % 35);            // 3–37 "muiden" arviota
-  const avgSeed = 2.8 + ((hash >> 5) % 21) / 10; // 2.8–4.8 tähteä keskimäärin
-  communityRatings[id] = { sum: Math.round(avgSeed * count), count };
-}
+// Kaikkien arviot: ratingSum/ratingCount tulevat nyt suoraan Firestoren
+// restaurants-dokumentista. Siellä on jo valmiiksi "uskottava lähtötilanne"
+// (siemen), jonka Cloud Function (syncRestaurants) kirjoittaa kerran kun
+// ravintola nähdään ensimmäistä kertaa - oikeat arviot lisääntyvät sen
+// PÄÄLLE samaan kenttään (onRatingWrite), joten täällä ei enää tarvita
+// erillistä mock-järjestelmää tai localStoragea tätä varten.
 function getCommunityAvg(id) {
   const r = restaurants.find(x => x.id === id);
-  if (r && typeof r.ratingSum === 'number' && typeof r.ratingCount === 'number') {
-    return r.ratingCount > 0 ? r.ratingSum / r.ratingCount : 0;
-  }
-  seedCommunityIfNeeded(id);
-  const c = communityRatings[id];
-  return c.count > 0 ? c.sum / c.count : 0;
+  const sum = r && typeof r.ratingSum === 'number' ? r.ratingSum : 0;
+  const count = r && typeof r.ratingCount === 'number' ? r.ratingCount : 0;
+  return count > 0 ? sum / count : 0;
 }
 function getCommunityCount(id) {
   const r = restaurants.find(x => x.id === id);
-  if (r && typeof r.ratingCount === 'number') return r.ratingCount;
-  seedCommunityIfNeeded(id);
-  return communityRatings[id].count;
+  return r && typeof r.ratingCount === 'number' ? r.ratingCount : 0;
 }
 
 const map = L.map('map', { zoomControl: true }).setView([61.4978, 23.7610], 14);
@@ -1562,11 +1536,6 @@ function websiteLinkHtml(r) {
   return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Verkkosivusto<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
 }
 
-function hashStr(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
-}
 function todayDateStr() { return new Date().toISOString().slice(0, 10); }
 function isWeekdayToday() { const d = new Date().getDay(); return d >= 1 && d <= 5; }
 
@@ -1653,7 +1622,7 @@ window.toggleLunchDetail = toggleLunchDetail;
 const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2C7.6 2 4 5.6 4 10c0 5.4 6.7 11.1 7 11.3c.3.2.7.2 1 0c.3-.2 7-5.9 7-11.3c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6a3 3 0 0 1 0 6z"/></svg>';
 
 function genreHtml(r) {
-  if (r.cuisineUnknown) return `<span class="genre-plain">${r.cuisine}</span>`;
+  if (r.cuisineUnknown) return '';
   return `<span class="genre">${r.cuisine}</span>`;
 }
 
@@ -1717,12 +1686,16 @@ function setRating(id, val) {
       if (newVal > 0) r.ratingSum += newVal, r.ratingCount += 1;
     }
   } else {
-    // Ei backendiä: sama paikallinen simulointi kuin ennenkin.
-    seedCommunityIfNeeded(id);
-    const c = communityRatings[id];
-    if (prev > 0) { c.sum -= prev; c.count = Math.max(0, c.count - 1); }
-    if (newVal > 0) { c.sum += newVal; c.count += 1; }
-    saveCommunityRatings();
+    // Ei backendiä (esim. paikallinen testaus ilman Firebase-konfiguraatiota):
+    // päivitetään samat ratingSum/ratingCount-kentät suoraan ravintolan
+    // muistinvaraiseen olioon, ei enää erillistä mock-järjestelmää.
+    const r = restaurants.find(x => x.id === id);
+    if (r) {
+      r.ratingSum = typeof r.ratingSum === 'number' ? r.ratingSum : 0;
+      r.ratingCount = typeof r.ratingCount === 'number' ? r.ratingCount : 0;
+      if (prev > 0) { r.ratingSum -= prev; r.ratingCount = Math.max(0, r.ratingCount - 1); }
+      if (newVal > 0) { r.ratingSum += newVal; r.ratingCount += 1; }
+    }
   }
 
   userData[id].rating = newVal;
