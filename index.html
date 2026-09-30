@@ -175,7 +175,6 @@
     font-family: inherit;
   }
   .toggle-all-lunch-btn:hover { text-decoration: underline; }
-  .toggle-wide-btn { margin-top: 6px; display: none; } /* vain työpöydällä, ks. media-kysely alempana */
   .segment {
     display: flex;
     gap: 6px;
@@ -641,7 +640,6 @@
   /* ===== Työpöytäversio (>=990px): pysyvä 400px sivupalkki + tumma overlay suodattimille ===== */
   @media (min-width: 990px) {
     .filter-btn-sidebar { display: inline-flex; }
-    .toggle-wide-btn { display: block; }
     main {
       display: flex;
       flex-direction: row;
@@ -658,13 +656,13 @@
       overflow: hidden;
       transition: width 0.2s ease;
     }
-    #sidebar.collapsed { width: 44px; }
-    /* "Leveä" tila: käytössä kun lounaslistat ovat globaalisti kiinni (ks.
-       toggleAllLunch-nappi) - kortit pysyvät TÄSMÄLLEEN samanlevyisinä kuin
-       yhden palstan tilassa, vain sivupalkki levenee ja kortit järjestyvät
-       kahteen palstaan vierekkäin. Leveys laskettu niin että yksittäisen
-       kortin sisältöleveys (368px) toistuu identtisenä molemmissa tiloissa:
-       800px - listCards-täyte (2x16px) - sarakeväli (16px) = 2 x 368px.*/
+    /* Sivupalkin laajennettu tila - kortit pysyvät TÄSMÄLLEEN samanlevyisinä
+       kuin yhden palstan tilassa, vain sivupalkki levenee ja kortit
+       järjestyvät kahteen palstaan vierekkäin. Leveys laskettu niin että
+       yksittäisen kortin sisältöleveys (368px) toistuu identtisenä
+       molemmissa tiloissa: 800px - listCards-täyte (2x16px) - sarakeväli
+       (16px) = 2 x 368px. Sama nappi (sidebarCollapseBtn) joka aiemmin
+       pienensi palkin 44px:ään laajentaa sen nyt tähän tilaan.*/
     #sidebar.wide { width: 800px; }
     #sidebar.wide .sidebar-inner { width: 800px; }
     #listCards.grid-2col {
@@ -680,7 +678,6 @@
       height: 100%;
       flex-shrink: 0;
     }
-    #sidebar.collapsed .sidebar-inner { display: none; }
     .sidebar-collapse-btn {
       display: flex;
       align-items: center;
@@ -697,9 +694,8 @@
       cursor: pointer;
       z-index: 5;
     }
-    #sidebar.collapsed .sidebar-collapse-btn { right: 8px; }
     .sidebar-collapse-btn svg { transition: transform 0.2s ease; }
-    #sidebar.collapsed .sidebar-collapse-btn svg { transform: scaleX(-1); }
+    #sidebar.wide .sidebar-collapse-btn svg { transform: scaleX(-1); }
     #mapWrap {
       display: block;
       position: relative;
@@ -801,7 +797,7 @@
 
 <main>
   <div id="sidebar">
-    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="Pienennä lista-palkki" aria-expanded="true">
+    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="Laajenna näkymä" aria-expanded="false">
       <svg viewBox="0 0 20 20" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="1.5" y="2.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.4"/>
         <line x1="7.5" y1="2.5" x2="7.5" y2="17.5" stroke="currentColor" stroke-width="1.4"/>
@@ -837,7 +833,6 @@
             </button>
           </div>
           <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunch">Avaa lounaslistat</button>
-          <button type="button" class="toggle-all-lunch-btn toggle-wide-btn" id="toggleWideSidebar">Laajenna näkymä</button>
         </div>
         <div id="listCards"></div>
       </div>
@@ -1674,7 +1669,7 @@ window.toggleLunchDetail = toggleLunchDetail;
 // Globaali "avaa/sulje kaikki lounaslistat" -nappi: päivittää kaikki
 // näkyvillä olevat kortit kerralla ja tallettaa tilan seuraavia
 // renderöintejä varten (ks. lunchToggleWrapper). Ei liity sivupalkin
-// leveyteen - se on oma, itsenäinen toimintonsa (ks. toggleWideSidebar alla).
+// leveyteen - se on oma, itsenäinen toimintonsa (ks. sidebarCollapseBtn alla).
 function applyGlobalLunchState() {
   document.querySelectorAll('.lunch-summary').forEach((wrap) => {
     wrap.classList.toggle('expanded', allLunchExpanded);
@@ -1689,22 +1684,9 @@ document.getElementById('toggleAllLunch').onclick = () => {
   applyGlobalLunchState();
 };
 
-// Itsenäinen "laajenna näkymä" -nappi: levittää sivupalkin ja järjestää
-// kortit kahteen palstaan. Täysin erillinen lounaslistojen avaa/sulje-
-// tilasta - käyttäjä voi yhdistellä näitä kahta miten haluaa.
+// Sivupalkin leveys-tila (ks. sidebarCollapseBtn alempana, joka on kytketty
+// tähän samaan tilaan eikä enää pienennä palkkia).
 let sidebarWide = false;
-function applyWideSidebarState() {
-  const sidebar = document.getElementById('sidebar');
-  const listCards = document.getElementById('listCards');
-  if (sidebar) sidebar.classList.toggle('wide', sidebarWide);
-  if (listCards) listCards.classList.toggle('grid-2col', sidebarWide);
-  const btn = document.getElementById('toggleWideSidebar');
-  if (btn) btn.textContent = sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä';
-}
-document.getElementById('toggleWideSidebar').onclick = () => {
-  sidebarWide = !sidebarWide;
-  applyWideSidebarState();
-};
 
 const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2C7.6 2 4 5.6 4 10c0 5.4 6.7 11.1 7 11.3c.3.2.7.2 1 0c.3-.2 7-5.9 7-11.3c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6a3 3 0 0 1 0 6z"/></svg>';
 
@@ -1936,10 +1918,13 @@ document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
 
 document.getElementById('sidebarCollapseBtn').onclick = () => {
   const sidebar = document.getElementById('sidebar');
+  const listCards = document.getElementById('listCards');
   const btn = document.getElementById('sidebarCollapseBtn');
-  const collapsed = sidebar.classList.toggle('collapsed');
-  btn.setAttribute('aria-expanded', String(!collapsed));
-  btn.setAttribute('aria-label', collapsed ? 'Laajenna lista-palkki' : 'Pienennä lista-palkki');
+  sidebarWide = !sidebarWide;
+  sidebar.classList.toggle('wide', sidebarWide);
+  if (listCards) listCards.classList.toggle('grid-2col', sidebarWide);
+  btn.setAttribute('aria-expanded', String(sidebarWide));
+  btn.setAttribute('aria-label', sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä');
   setTimeout(() => map.invalidateSize(), 210); // odotetaan CSS-transitionin loppuminen
 };
 
