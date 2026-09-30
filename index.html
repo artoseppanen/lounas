@@ -152,7 +152,7 @@
     position: sticky;
     top: 0;
     background: #f2f2f0;
-    padding: 16px 16px 14px;
+    padding: 10px 16px 12px;
     border-bottom: 1px solid var(--line);
     z-index: 5;
   }
@@ -197,13 +197,6 @@
     color: var(--paper);
     border-color: var(--ink);
   }
-  .list-count {
-    font-size: 12.5px;
-    color: #5b6a61;
-  }
-  .list-count b { color: var(--ink); }
-  .list-count .status { color: var(--muted); }
-
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -217,7 +210,7 @@
   }
   .search-wrap {
     position: relative;
-    margin: 12px 0;
+    margin: 0 0 10px;
   }
   .name-search {
     width: 100%;
@@ -804,7 +797,7 @@
           </div>
           <div class="segment-row">
             <div class="segment">
-              <button class="seg-btn active" id="filterVisible">Kartalla näkyvät</button>
+              <button class="seg-btn active" id="filterVisible">Kartalla näkyvät <span id="visibleCount">(0)</span></button>
               <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
             </div>
             <button class="filter-btn filter-btn-sidebar" id="openFilterSidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Suodata ravintoloita">
@@ -813,10 +806,6 @@
               </svg>
               <span class="count" id="filterCountSidebar"></span>
             </button>
-          </div>
-          <div class="list-count" role="status" aria-live="polite">
-            <b id="countNum">0</b> <span id="countLabel">ravintolaa näkyvissä</span>
-            <span id="status" class="status"></span>
           </div>
         </div>
         <div id="listCards"></div>
@@ -1141,11 +1130,9 @@ async function loadDailyMenusFromFirestore() {
 }
 
 async function loadAllRestaurantsOnce() {
-  const status = document.getElementById('status');
   try {
     if (FIREBASE_ENABLED) {
       setLoadingBanner('loading');
-      status.textContent = "· haetaan…";
       try {
         await fbReady;
         await loadUserDataFromFirestore();
@@ -1160,7 +1147,6 @@ async function loadAllRestaurantsOnce() {
           renderFavorites();
           updateFavTabLabel();
           setLoadingBanner('done');
-          status.textContent = "";
           return;
         }
         // Firestoressa ei vielä dataa (esim. syncRestaurants-funktiota ei ole
@@ -1181,12 +1167,10 @@ async function loadAllRestaurantsOnce() {
       renderFavorites();
       updateFavTabLabel();
       setLoadingBanner('done');
-      status.textContent = "";
       return;
     }
 
     setLoadingBanner('loading');
-    status.textContent = "· haetaan…";
     try {
       const query = buildQuery(TAMPERE_BBOX);
       const res = await fetch(OVERPASS_URL, {
@@ -1208,10 +1192,8 @@ async function loadAllRestaurantsOnce() {
       renderFavorites();
       updateFavTabLabel();
       setLoadingBanner('done');
-      status.textContent = "";
     } catch (err) {
       setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
-      status.textContent = "";
     }
   } catch (outerErr) {
     // Viimeinen turvaverkko: jos jokin yllä olevista haaroista heittää
@@ -1220,7 +1202,6 @@ async function loadAllRestaurantsOnce() {
     // -tilaan.
     console.error('Odottamaton virhe ravintoloiden latauksessa:', outerErr);
     setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
-    status.textContent = "";
   }
 }
 
@@ -1778,11 +1759,7 @@ function hasLunchToday(r) {
 }
 
 function updateHeaderInfo() {
-  const countEl = document.getElementById('countNum');
-  const labelEl = document.getElementById('countLabel');
-  const list = currentListRestaurants();
-  countEl.textContent = list.length;
-  labelEl.textContent = listFilterMode === 'all' ? "ravintolaa yhteensä" : "ravintolaa näkyvissä";
+  document.getElementById('visibleCount').textContent = `(${visibleRestaurants().length})`;
 }
 
 function updateFavTabLabel() {
