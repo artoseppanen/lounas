@@ -1592,7 +1592,7 @@ function lunchToggleWrapper(summaryText, detailHtml) {
         <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/>
       </svg>
     </button>
-    <div class="lunch-detail">${detailHtml}</div>
+    <div class="lunch-detail" onclick="event.stopPropagation(); toggleLunchDetail(this.closest('.lunch-summary').querySelector('.lunch-toggle'))">${detailHtml}</div>
   </div>`;
 }
 
