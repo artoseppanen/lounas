@@ -21,6 +21,7 @@
     --paper: #ffffff;
     --accent: #14a098;
     --accent-text: #0f7872; /* tummennettu versio accentista: täyttää 4.5:1 tekstinä valkoisella/vaalealla */
+    --link-blue: #0a6e9c; /* sinisempi, saavutettava (5.64:1) tekstilinkeille/-napeille */
     --accent-soft: #e7d9c9;
     --line: #d8d0c0;
     --line-strong: #97845e; /* tummennettu reuna interaktiivisille komponenteille (3:1 vaatimus) */
@@ -168,7 +169,7 @@
     padding: 0;
     background: none;
     border: none;
-    color: var(--accent);
+    color: var(--link-blue);
     font-size: 12.5px;
     font-weight: 600;
     cursor: pointer;
@@ -662,14 +663,22 @@
        yksittäisen kortin sisältöleveys (368px) toistuu identtisenä
        molemmissa tiloissa: 800px - listCards-täyte (2x16px) - sarakeväli
        (16px) = 2 x 368px. Sama nappi (sidebarCollapseBtn) joka aiemmin
-       pienensi palkin 44px:ään laajentaa sen nyt tähän tilaan.*/
+       pienensi palkin 44px:ään laajentaa sen nyt tähän tilaan.
+       HUOM: CSS-monipalstaisuus (column-count) eikä Grid - Grid jättäisi
+       tyhjää tilaa lyhyempien korttien alle kun vierekkäisten korttien
+       pituudet vaihtelevat rajusti (auki olevat lounaslistat ovat hyvin
+       eripituisia). Monipalstaisuus pinoaa kortit palstoittain ylhäältä
+       alas ilman tyhjiä välejä - lukujärjestys on tällöin "koko vasen
+       palsta ylhäältä alas, sitten oikea", ei rivi kerrallaan.*/
     #sidebar.wide { width: 800px; }
     #sidebar.wide .sidebar-inner { width: 800px; }
     #listCards.grid-2col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      column-count: 2;
       column-gap: 16px;
-      align-items: start;
+    }
+    #listCards.grid-2col .card {
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
     }
     .sidebar-inner {
       display: flex;
