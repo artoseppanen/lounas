@@ -275,7 +275,14 @@
   #listCards, #favCards { padding-left: 16px; padding-right: 16px; }
   #listCards { padding-top: 10px; }
   #favCards { padding-top: 4px; padding-bottom: 14px; }
-  .fav-toolbar { padding: 10px 16px 0; }
+  .fav-toolbar {
+    position: sticky;
+    top: 0;
+    background: #f2f2f0;
+    padding: 10px 16px 12px;
+    border-bottom: 1px solid var(--line);
+    z-index: 5;
+  }
 
   .card {
     background: #fff;
