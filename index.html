@@ -1616,7 +1616,7 @@ function lunchSummaryHtml(r) {
       `;
       const summaryText = real.prices && real.prices[0]
         ? `Tänään: ${real.prices[0].label} ${real.prices[0].price}`
-        : 'Lounaslista saatavilla tänään';
+        : 'Näytä päivän lounaslista';
       return lunchToggleWrapper(summaryText, detail);
     }
 
