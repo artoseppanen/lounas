@@ -162,6 +162,20 @@
     gap: 8px;
     margin-bottom: 8px;
   }
+  .toggle-all-lunch-btn {
+    display: block;
+    margin: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .toggle-all-lunch-btn:hover { text-decoration: underline; }
+  .toggle-wide-btn { margin-top: 6px; display: none; } /* vain työpöydällä, ks. media-kysely alempana */
   .segment {
     display: flex;
     gap: 6px;
@@ -627,6 +641,7 @@
   /* ===== Työpöytäversio (>=990px): pysyvä 400px sivupalkki + tumma overlay suodattimille ===== */
   @media (min-width: 990px) {
     .filter-btn-sidebar { display: inline-flex; }
+    .toggle-wide-btn { display: block; }
     main {
       display: flex;
       flex-direction: row;
@@ -644,6 +659,20 @@
       transition: width 0.2s ease;
     }
     #sidebar.collapsed { width: 44px; }
+    /* "Leveä" tila: käytössä kun lounaslistat ovat globaalisti kiinni (ks.
+       toggleAllLunch-nappi) - kortit pysyvät TÄSMÄLLEEN samanlevyisinä kuin
+       yhden palstan tilassa, vain sivupalkki levenee ja kortit järjestyvät
+       kahteen palstaan vierekkäin. Leveys laskettu niin että yksittäisen
+       kortin sisältöleveys (368px) toistuu identtisenä molemmissa tiloissa:
+       800px - listCards-täyte (2x16px) - sarakeväli (16px) = 2 x 368px.*/
+    #sidebar.wide { width: 800px; }
+    #sidebar.wide .sidebar-inner { width: 800px; }
+    #listCards.grid-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 16px;
+      align-items: start;
+    }
     .sidebar-inner {
       display: flex;
       flex-direction: column;
@@ -807,6 +836,8 @@
               <span class="count" id="filterCountSidebar"></span>
             </button>
           </div>
+          <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunch">Avaa lounaslistat</button>
+          <button type="button" class="toggle-all-lunch-btn toggle-wide-btn" id="toggleWideSidebar">Laajenna näkymä</button>
         </div>
         <div id="listCards"></div>
       </div>
@@ -1222,6 +1253,9 @@ const activeFilters = { types: new Set(), minRatingAvg: 0, minRatingOwn: 0, open
 // Nopea nimihaku listasuodattimien alla. Suodattaa vasta kun kirjoitettu
 // vähintään 2 merkkiä, pienellä viiveellä ettei jokainen näppäily hae erikseen.
 let nameQuery = '';
+// Globaali "avaa/sulje kaikki lounaslistat" -tila - vaikuttaa sekä uusien
+// korttien oletustilaan että jo näkyvillä oleviin kortteihin heti klikattaessa.
+let allLunchExpanded = false;
 
 function matchesFilters(r) {
   if (nameQuery.length >= 2 && !r.name.toLowerCase().includes(nameQuery)) return false;
@@ -1566,8 +1600,10 @@ function allergenBadges(codes) {
 // (esim. CSS text-overflow:ellipsis tai JS-katkaisu "..." -päätteellä) voi
 // säätää myöhemmin kun nähdään miltä oikea data näyttää käytännössä.
 function lunchToggleWrapper(summaryText, detailHtml) {
-  return `<div class="lunch-summary">
-    <button type="button" class="lunch-toggle" aria-expanded="false" onclick="event.stopPropagation(); toggleLunchDetail(this)">
+  const expandedClass = allLunchExpanded ? ' expanded' : '';
+  const ariaExpanded = allLunchExpanded ? 'true' : 'false';
+  return `<div class="lunch-summary${expandedClass}">
+    <button type="button" class="lunch-toggle" aria-expanded="${ariaExpanded}" onclick="event.stopPropagation(); toggleLunchDetail(this)">
       <span class="lunch-toggle-text">${summaryText}</span>
       <svg class="lunch-chevron" viewBox="0 0 24 24" width="12" height="12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/>
@@ -1634,6 +1670,41 @@ function toggleLunchDetail(btn) {
   btn.setAttribute('aria-expanded', String(expanded));
 }
 window.toggleLunchDetail = toggleLunchDetail;
+
+// Globaali "avaa/sulje kaikki lounaslistat" -nappi: päivittää kaikki
+// näkyvillä olevat kortit kerralla ja tallettaa tilan seuraavia
+// renderöintejä varten (ks. lunchToggleWrapper). Ei liity sivupalkin
+// leveyteen - se on oma, itsenäinen toimintonsa (ks. toggleWideSidebar alla).
+function applyGlobalLunchState() {
+  document.querySelectorAll('.lunch-summary').forEach((wrap) => {
+    wrap.classList.toggle('expanded', allLunchExpanded);
+    const btn = wrap.querySelector('.lunch-toggle');
+    if (btn) btn.setAttribute('aria-expanded', String(allLunchExpanded));
+  });
+  const toggleBtn = document.getElementById('toggleAllLunch');
+  if (toggleBtn) toggleBtn.textContent = allLunchExpanded ? 'Sulje lounaslistat' : 'Avaa lounaslistat';
+}
+document.getElementById('toggleAllLunch').onclick = () => {
+  allLunchExpanded = !allLunchExpanded;
+  applyGlobalLunchState();
+};
+
+// Itsenäinen "laajenna näkymä" -nappi: levittää sivupalkin ja järjestää
+// kortit kahteen palstaan. Täysin erillinen lounaslistojen avaa/sulje-
+// tilasta - käyttäjä voi yhdistellä näitä kahta miten haluaa.
+let sidebarWide = false;
+function applyWideSidebarState() {
+  const sidebar = document.getElementById('sidebar');
+  const listCards = document.getElementById('listCards');
+  if (sidebar) sidebar.classList.toggle('wide', sidebarWide);
+  if (listCards) listCards.classList.toggle('grid-2col', sidebarWide);
+  const btn = document.getElementById('toggleWideSidebar');
+  if (btn) btn.textContent = sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä';
+}
+document.getElementById('toggleWideSidebar').onclick = () => {
+  sidebarWide = !sidebarWide;
+  applyWideSidebarState();
+};
 
 const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2C7.6 2 4 5.6 4 10c0 5.4 6.7 11.1 7 11.3c.3.2.7.2 1 0c.3-.2 7-5.9 7-11.3c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6a3 3 0 0 1 0 6z"/></svg>';
 
