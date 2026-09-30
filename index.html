@@ -272,9 +272,10 @@
   }
   .search-clear.visible { display: flex; }
 
-  #listCards, #favView { padding-left: 16px; padding-right: 16px; }
+  #listCards, #favCards { padding-left: 16px; padding-right: 16px; }
   #listCards { padding-top: 10px; }
-  #favView { padding-top: 14px; }
+  #favCards { padding-top: 4px; padding-bottom: 14px; }
+  .fav-toolbar { padding: 10px 16px 0; }
 
   .card {
     background: #fff;
@@ -496,7 +497,7 @@
     white-space: nowrap;
   }
   .leaflet-popup-content { margin: 10px 12px; }
-  .leaflet-popup-content-wrapper { max-width: 240px; }
+  .leaflet-popup-content-wrapper { max-width: 300px; }
 
   /* Kelluva pohjanavigaatio kartan päällä */
   .bottom-nav {
@@ -663,22 +664,19 @@
        molemmissa tiloissa: 800px - listCards-täyte (2x16px) - sarakeväli
        (16px) = 2 x 368px. Sama nappi (sidebarCollapseBtn) joka aiemmin
        pienensi palkin 44px:ään laajentaa sen nyt tähän tilaan.
-       HUOM: CSS-monipalstaisuus (column-count) eikä Grid - Grid jättäisi
-       tyhjää tilaa lyhyempien korttien alle kun vierekkäisten korttien
-       pituudet vaihtelevat rajusti (auki olevat lounaslistat ovat hyvin
-       eripituisia). Monipalstaisuus pinoaa kortit palstoittain ylhäältä
-       alas ilman tyhjiä välejä - lukujärjestys on tällöin "koko vasen
-       palsta ylhäältä alas, sitten oikea", ei rivi kerrallaan.*/
+       HUOM: kaksipalstajako lasketaan JavaScriptillä (ks. cardGroupsHtml),
+       ei CSS:n column-count:lla - se ei tasapainota luotettavasti
+       automaattikorkuisen flex-säiliön sisällä (kaikki päätyisi yhteen
+       palstaan). .card-cols/.card-col ovat siis tavallista flexiä.*/
     #sidebar.wide { width: 800px; }
     #sidebar.wide .sidebar-inner { width: 800px; }
-    #listCards.grid-2col, #favView.grid-2col {
-      column-count: 2;
-      column-gap: 16px;
+    .card-cols {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
     }
-    #listCards.grid-2col .card, #favView.grid-2col .card {
-      break-inside: avoid;
-      -webkit-column-break-inside: avoid;
-    }
+    .card-cols .card-col { flex: 1; min-width: 0; }
+    .card-cols + .card-cols { margin-top: 6px; }
     .sidebar-inner {
       display: flex;
       flex-direction: column;
@@ -845,7 +843,12 @@
         <div id="listCards"></div>
       </div>
 
-      <div id="favView"></div>
+      <div id="favView">
+        <div class="fav-toolbar">
+          <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunchFav">Avaa lounaslistat</button>
+        </div>
+        <div id="favCards"></div>
+      </div>
     </div>
   </div>
 
@@ -1244,7 +1247,7 @@ function rebuildMarkers() {
   for (const k in markers) delete markers[k];
   restaurants.forEach(r => {
     const marker = L.marker([r.lat, r.lon]);
-    marker.bindPopup(popupHtml(r), { maxWidth: 240, minWidth: 190 });
+    marker.bindPopup(popupHtml(r), { maxWidth: 300, minWidth: 190 });
     markers[r.id] = marker;
   });
   applyFiltersToMap();
@@ -1684,13 +1687,19 @@ function applyGlobalLunchState() {
     const btn = wrap.querySelector('.lunch-toggle');
     if (btn) btn.setAttribute('aria-expanded', String(allLunchExpanded));
   });
-  const toggleBtn = document.getElementById('toggleAllLunch');
-  if (toggleBtn) toggleBtn.textContent = allLunchExpanded ? 'Sulje lounaslistat' : 'Avaa lounaslistat';
+  const label = allLunchExpanded ? 'Sulje lounaslistat' : 'Avaa lounaslistat';
+  ['toggleAllLunch', 'toggleAllLunchFav'].forEach((id) => {
+    const toggleBtn = document.getElementById(id);
+    if (toggleBtn) toggleBtn.textContent = label;
+  });
 }
-document.getElementById('toggleAllLunch').onclick = () => {
-  allLunchExpanded = !allLunchExpanded;
-  applyGlobalLunchState();
-};
+['toggleAllLunch', 'toggleAllLunchFav'].forEach((id) => {
+  const btn = document.getElementById(id);
+  if (btn) btn.onclick = () => {
+    allLunchExpanded = !allLunchExpanded;
+    applyGlobalLunchState();
+  };
+});
 
 // Sivupalkin leveys-tila (ks. sidebarCollapseBtn alempana, joka on kytketty
 // tähän samaan tilaan eikä enää pienennä palkkia).
@@ -1850,22 +1859,50 @@ function cardHtml(r) {
   `;
 }
 
+// Kortit jaetaan kahteen ERILLISEEN palstalohkoon (lounas tänään / ei
+// lounasta) sen sijaan että koko lista olisi yhtenä palstavirtana - muuten
+// CSS:n monipalstaisuuden korkeuspohjainen tasapainotus voisi nostaa
+// lyhyempiä "ei lounasta" -kortteja visuaalisesti ylös pitkien lounaslista-
+// korttien rinnalle, vaikka ne ovat listassa myöhemmin.
+// Kortit jaetaan kahteen ERILLISEEN ryhmään (lounas tänään / ei lounasta), ja
+// kumpikin ryhmä täyttää molemmat palstat vuorotellen (1. vasen, 2. oikea,
+// 3. vasen, ...) KUN sivupalkki on leveässä tilassa. Jako lasketaan itse
+// JavaScriptillä CSS:n column-count:in sijaan, koska CSS:n palstatasapainotus
+// ei toimi luotettavasti automaattikorkuisen flex-säiliön sisällä (selaimet,
+// erityisesti Chrome, tuupaavat silloin usein kaiken yhteen palstaan).
+function cardGroupsHtml(list) {
+  const withLunch = list.filter(hasLunchToday);
+  const withoutLunch = list.filter((r) => !hasLunchToday(r));
+
+  const group = (arr) => {
+    if (!arr.length) return '';
+    if (!sidebarWide) return arr.map(cardHtml).join(''); // yksi palsta: tavallinen järjestys
+    const left = arr.filter((_, i) => i % 2 === 0);
+    const right = arr.filter((_, i) => i % 2 === 1);
+    return `<div class="card-cols">
+      <div class="card-col">${left.map(cardHtml).join('')}</div>
+      <div class="card-col">${right.map(cardHtml).join('')}</div>
+    </div>`;
+  };
+  return group(withLunch) + group(withoutLunch);
+}
+
 function renderList() {
   const el = document.getElementById('listCards');
   const list = currentListRestaurants();
   const emptyHint = nameQuery.length >= 2
     ? `Ei hakutuloksia haulla "${escapeHtml(nameQuery)}".`
     : 'Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.';
-  el.innerHTML = list.map(cardHtml).join('') || `<p class="empty-hint">${emptyHint}</p>`;
+  el.innerHTML = list.length ? cardGroupsHtml(list) : `<p class="empty-hint">${emptyHint}</p>`;
   updateHeaderInfo();
 }
 
 function renderFavorites() {
-  const el = document.getElementById('favView');
+  const el = document.getElementById('favCards');
   const favs = restaurants
     .filter(r => isFav(r.id))
     .sort((a, b) => getRating(b.id) - getRating(a.id) || a.name.localeCompare(b.name, 'fi'));
-  el.innerHTML = favs.map(cardHtml).join('') || '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
+  el.innerHTML = favs.length ? cardGroupsHtml(favs) : '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
 }
 
 function focusOnMap(id) {
@@ -1926,15 +1963,16 @@ document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
 
 document.getElementById('sidebarCollapseBtn').onclick = () => {
   const sidebar = document.getElementById('sidebar');
-  const listCards = document.getElementById('listCards');
-  const favView = document.getElementById('favView');
   const btn = document.getElementById('sidebarCollapseBtn');
   sidebarWide = !sidebarWide;
   sidebar.classList.toggle('wide', sidebarWide);
-  if (listCards) listCards.classList.toggle('grid-2col', sidebarWide);
-  if (favView) favView.classList.toggle('grid-2col', sidebarWide);
   btn.setAttribute('aria-expanded', String(sidebarWide));
   btn.setAttribute('aria-label', sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä');
+  // Palstajako lasketaan renderöintihetkellä (ks. cardGroupsHtml), joten
+  // pelkkä CSS-luokan vaihto ei riitä - lista ja suosikit pitää piirtää
+  // uudelleen jotta ne saavat oikean HTML-rakenteen (yksi palsta / kaksi).
+  renderList();
+  renderFavorites();
   setTimeout(() => map.invalidateSize(), 210); // odotetaan CSS-transitionin loppuminen
 };
 
