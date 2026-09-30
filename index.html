@@ -1709,8 +1709,11 @@ function applyGlobalLunchState() {
 });
 
 // Sivupalkin leveys-tila (ks. sidebarCollapseBtn alempana, joka on kytketty
-// tähän samaan tilaan eikä enää pienennä palkkia).
-let sidebarWide = false;
+// tähän samaan tilaan eikä enää pienennä palkkia). Oletus riippuu näytön
+// leveydestä: yli 1500px näytöillä aloitetaan laajassa tilassa, muuten
+// kapeassa - käyttäjä voi silti vaihtaa saman napin kautta kumpaan suuntaan
+// tahansa riippumatta tästä oletuksesta.
+let sidebarWide = window.innerWidth > 1500;
 
 const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M12 2C7.6 2 4 5.6 4 10c0 5.4 6.7 11.1 7 11.3c.3.2.7.2 1 0c.3-.2 7-5.9 7-11.3c0-4.4-3.6-8-8-8zm0 11a3 3 0 1 1 0-6a3 3 0 0 1 0 6z"/></svg>';
 
@@ -1968,13 +1971,23 @@ function showSidebarTab(which) {
 document.getElementById('sbTabList').onclick = () => showSidebarTab('list');
 document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
 
-document.getElementById('sidebarCollapseBtn').onclick = () => {
+function applySidebarWideVisuals() {
   const sidebar = document.getElementById('sidebar');
   const btn = document.getElementById('sidebarCollapseBtn');
+  if (sidebar) sidebar.classList.toggle('wide', sidebarWide);
+  if (btn) {
+    btn.setAttribute('aria-expanded', String(sidebarWide));
+    btn.setAttribute('aria-label', sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä');
+  }
+}
+// Asetetaan näytön leveyden mukainen oletustila heti, ennen ensimmäistä
+// korttien renderöintiä (ks. loadAllRestaurantsOnce), jotta lista ja
+// suosikit piirtyvät suoraan oikealla palstajaolla ilman erillistä klikkausta.
+applySidebarWideVisuals();
+
+document.getElementById('sidebarCollapseBtn').onclick = () => {
   sidebarWide = !sidebarWide;
-  sidebar.classList.toggle('wide', sidebarWide);
-  btn.setAttribute('aria-expanded', String(sidebarWide));
-  btn.setAttribute('aria-label', sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä');
+  applySidebarWideVisuals();
   // Palstajako lasketaan renderöintihetkellä (ks. cardGroupsHtml), joten
   // pelkkä CSS-luokan vaihto ei riitä - lista ja suosikit pitää piirtää
   // uudelleen jotta ne saavat oikean HTML-rakenteen (yksi palsta / kaksi).
