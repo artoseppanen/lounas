@@ -1760,7 +1760,21 @@ function currentListRestaurants() {
   // / "Kaikki ravintolat" -valinnasta — vain muut suodattimet (tyyppi,
   // arvosana, aukiolo) kunnioittavat edelleen sitä valintaa, kuten ennenkin.
   const base = nameQuery.length >= 2 ? restaurants : (listFilterMode === 'all' ? restaurants : visibleRestaurants());
-  return base.filter(matchesFilters);
+  return base.filter(matchesFilters).sort((a, b) => {
+    const aHas = hasLunchToday(a) ? 1 : 0;
+    const bHas = hasLunchToday(b) ? 1 : 0;
+    if (aHas !== bHas) return bHas - aHas; // lounaslista tänään -> ensin
+    return a.name.localeCompare(b.name, 'fi'); // sen jälkeen aakkosjärjestys
+  });
+}
+
+// Sama ehto jota lunchSummaryHtml käyttää päättäessään näyttääkö lounaslohkon -
+// käytetään myös järjestykseen, jotta "kenellä on lounaslista" tarkoittaa
+// täsmälleen samaa asiaa listajärjestyksessä ja itse kortin sisällössä.
+function hasLunchToday(r) {
+  if (!isWeekdayToday()) return false;
+  const real = realDailyMenus[r.id];
+  return !!(real && real.parseStatus !== 'failed');
 }
 
 function updateHeaderInfo() {
