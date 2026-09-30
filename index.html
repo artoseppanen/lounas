@@ -324,9 +324,8 @@
     display: inline-block;
     margin-top: 6px;
     font-size: 12.5px;
-    color: var(--accent-text);
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    color: var(--link-blue);
+    text-decoration: none;
   }
   .website-link:active { opacity: 0.7; }
   .ext-link-icon {
@@ -672,11 +671,11 @@
        palsta ylhäältä alas, sitten oikea", ei rivi kerrallaan.*/
     #sidebar.wide { width: 800px; }
     #sidebar.wide .sidebar-inner { width: 800px; }
-    #listCards.grid-2col {
+    #listCards.grid-2col, #favView.grid-2col {
       column-count: 2;
       column-gap: 16px;
     }
-    #listCards.grid-2col .card {
+    #listCards.grid-2col .card, #favView.grid-2col .card {
       break-inside: avoid;
       -webkit-column-break-inside: avoid;
     }
@@ -1928,10 +1927,12 @@ document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
 document.getElementById('sidebarCollapseBtn').onclick = () => {
   const sidebar = document.getElementById('sidebar');
   const listCards = document.getElementById('listCards');
+  const favView = document.getElementById('favView');
   const btn = document.getElementById('sidebarCollapseBtn');
   sidebarWide = !sidebarWide;
   sidebar.classList.toggle('wide', sidebarWide);
   if (listCards) listCards.classList.toggle('grid-2col', sidebarWide);
+  if (favView) favView.classList.toggle('grid-2col', sidebarWide);
   btn.setAttribute('aria-expanded', String(sidebarWide));
   btn.setAttribute('aria-label', sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä');
   setTimeout(() => map.invalidateSize(), 210); // odotetaan CSS-transitionin loppuminen
