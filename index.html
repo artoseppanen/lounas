@@ -574,23 +574,25 @@
     position: relative;
     z-index: 3; /* kahva pysyy otsikkokaistan päällä */
   }
+  .m-sheet-grab, .sheet-title-row { -webkit-tap-highlight-color: transparent; cursor: pointer; }
+  .m-sheet-grab:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -3px; border-radius: 12px; }
   .m-sheet-handle { width: 44px; height: 5px; border-radius: 3px; background: #c9d0cb; }
   /* Sticky-otsikkokaista: sisältöä vieritettäessä tausta ja ravintolan nimi
      häivytetään näkyviin (--hdr-p 0..1, asetetaan skrollauksen mukaan JS:ssä).
-     Sulje-nappi on aina käytettävissä. */
+     Sydän ja sulje-nappi ovat samalla rivillä ja aina käytettävissä. */
   .m-sheet-header {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    height: 54px;
+    height: 58px;
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px 0 18px;
+    gap: 6px;
+    padding: 20px 14px 0 18px; /* sama rivi kuin sisällön otsikko (kahvan alla) */
     border-radius: 18px 18px 0 0;
     background: rgba(255, 255, 255, var(--hdr-p, 0));
-    pointer-events: none; /* sisältö (esim. sydän) pysyy napautettavana kun kaista on läpinäkyvä */
+    pointer-events: none; /* sisältö pysyy napautettavana kun kaista on läpinäkyvä; sydän ja rasti ottavat osumat itse */
     z-index: 2;
   }
   .m-sheet.scrolled .m-sheet-header {
@@ -609,9 +611,23 @@
     opacity: var(--hdr-p, 0);
     transform: translateY(calc((1 - var(--hdr-p, 0)) * 5px));
   }
+  .m-sheet-heart {
+    flex: 0 0 auto;
+    display: flex;
+    pointer-events: auto;
+  }
+  .m-sheet-heart .heart {
+    width: 34px;
+    height: 30px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    line-height: 1;
+  }
   .m-sheet-close {
     flex: 0 0 auto;
-    margin-left: auto;
     width: 30px;
     height: 30px;
     border: none;
@@ -623,6 +639,7 @@
     cursor: pointer;
     pointer-events: auto;
   }
+  .m-sheet-inner { display: flow-root; } /* sisältö mitattavissa: lapsien marginaalit pysyvät sisällä */
   .m-sheet-body {
     flex: 1 1 auto;
     min-height: 0;
@@ -633,9 +650,8 @@
   .sheet-title-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding-right: 40px; /* tilaa sulkupainikkeelle */
+    min-height: 30px; /* sama korkeus kuin sydän/rasti -> nimi, sydän ja rasti samalla tasolla */
+    padding-right: 76px; /* tilaa kaistan sydämelle ja rastille */
   }
   .sheet-title-row h3 { margin: 0; font-size: 18px; line-height: 1.25; }
   .m-sheet-body .rating-row { margin: 4px 0 8px; }
@@ -982,9 +998,10 @@
 </main>
 
 <div id="mobileSheet" class="m-sheet" role="dialog" aria-label="Ravintolan tiedot" hidden>
-  <div class="m-sheet-grab" id="mSheetGrab" aria-hidden="true"><span class="m-sheet-handle"></span></div>
+  <div class="m-sheet-grab" id="mSheetGrab" role="button" tabindex="0" aria-label="Laajenna ravintolan tiedot" aria-expanded="false"><span class="m-sheet-handle"></span></div>
   <div class="m-sheet-header" id="mSheetHeader">
     <span class="m-sheet-header-title" id="mSheetHeaderTitle"></span>
+    <span class="m-sheet-heart" id="mSheetHeart"></span>
     <button type="button" class="m-sheet-close" id="mSheetClose" aria-label="Sulje ravintolan tiedot">&times;</button>
   </div>
   <div class="m-sheet-body" id="mSheetBody"></div>
@@ -1482,15 +1499,17 @@ let sheetState = 'half';
 let sheetPos = 0;            // paneelin translateY (px); 0 = täysin ylhäällä
 let sheetFullH = 0;          // paneelin kokonaiskorkeus (px)
 let sheetVisibleH = { peek: 0, half: 0, full: 0 };
+let sheetFits = false;       // true: koko sisältö mahtuu half-korkeuteen -> matala, sisällön mittainen paneeli
 let selectedMarkerId = null;
 let sheetHideTimer = null;
+let sheetReturnState = null; // tila josta otsikkorivin napautus laajensi paneelin -> takaisin tähän
+let sheetLastDragEnd = -1e9; // vedon päättymisaika (ms), jolla estetään vedon jälkeinen haamuklikkaus
 const sheetDrag = { active: false, mode: null, isMouse: false, fromBody: false, startY: 0, startPos: 0, lastY: 0, lastT: 0, vel: 0 };
 
 function sheetHtml(r) {
   const addr = r.addr ? `<span class="sheet-addr">${ADDR_ICON} ${escapeHtml(r.addr)}</span>` : '';
   return `<div class="sheet-title-row">
       <h3>${escapeHtml(r.name)}</h3>
-      ${heartHtml(r.id)}
     </div>
     ${starsHtml(r.id)}
     ${genreHtml(r)}
@@ -1505,13 +1524,64 @@ function computeSheetMetrics() {
   const navTop = document.querySelector('.bottom-nav').getBoundingClientRect().top;
   const navClear = Math.max(0, vh - navTop) + 6; // alapalkin viemä tila
   sheetFullH = Math.round(vh - headerH - 8);
+
+  const peek = Math.round(navClear + 100);
+  const defaultHalf = Math.round(Math.max(vh * 0.5, navClear + 230));
+
+  // Paneeli ei ole korkeampi kuin sisältönsä: jos koko sisältö (esim. ravintola
+  // ilman lounaslistaa) mahtuu oletuspuoliskoon, half-korkeudeksi tulee juuri
+  // sen verran että sisältö näkyy kelluvan alapalkin yläpuolella. Tällöin
+  // full-tilaa ei tarvita (ei olisi mitään vieritettävää).
+  const grabH = document.getElementById('mSheetGrab').offsetHeight || 20;
+  const inner = mSheetBody.firstElementChild;
+  const contentH = inner ? inner.offsetHeight : 0;
+  const fitH = Math.round(grabH + contentH + navClear + 4);
+  sheetFits = contentH > 0 && fitH <= defaultHalf;
+
   sheetVisibleH = {
-    peek: Math.round(navClear + 100),
-    half: Math.round(Math.max(vh * 0.5, navClear + 230)),
+    peek,
+    half: sheetFits ? Math.max(fitH, peek) : defaultHalf,
     full: sheetFullH,
   };
   mSheet.style.setProperty('--sheet-h', sheetFullH + 'px');
 }
+// Käytettävissä olevat pysähdyskohdat ylimmästä alimpaan. Sisällön mittaisella
+// paneelilla ei ole full-tilaa, ja jos sisältö on lähes peekin korkuinen,
+// kahta eri korkeutta ei tarvita.
+function availableSheetStates() {
+  if (!sheetFits) return ['full', 'half', 'peek'];
+  if (sheetVisibleH.half - sheetVisibleH.peek < 24) return ['half'];
+  return ['half', 'peek'];
+}
+// Otsikkorivin napautus (kuten Google Mapsissa): pienestä tilasta ylimpään
+// (full), ja ylimmästä takaisin siihen tilaan josta napautus laajensi paneelin.
+// Ylimmästä tilasta ilman tunnettua lähtötilaa: normaalilla paneelilla oletus
+// half; sisällön mittaisella paneelilla ei tehdä mitään (ei ole mihin palata).
+function toggleSheetByHeader() {
+  if (!sheetVisible) return;
+  const states = availableSheetStates();
+  const top = states[0];
+  if (states.length < 2) return; // vain yksi korkeus, ei mitään vaihdettavaa
+  if (sheetState !== top) {
+    const origin = sheetState;
+    snapSheet(top);
+    sheetReturnState = origin; // asetetaan snapin JÄLKEEN
+    return;
+  }
+  let back = null;
+  if (sheetReturnState && sheetReturnState !== top && states.includes(sheetReturnState)) back = sheetReturnState;
+  else if (!sheetFits) back = 'half';
+  sheetReturnState = null;
+  if (back) snapSheet(back);
+}
+function updateSheetToggleA11y() {
+  const grab = document.getElementById('mSheetGrab');
+  const states = availableSheetStates();
+  const expanded = states.length > 1 && sheetState === states[0];
+  grab.setAttribute('aria-expanded', String(expanded));
+  grab.setAttribute('aria-label', expanded ? 'Pienennä ravintolan tiedot' : 'Laajenna ravintolan tiedot');
+}
+
 function posFor(state) { return sheetFullH - sheetVisibleH[state]; }
 
 function setSheetPos(px, animate) {
@@ -1522,11 +1592,14 @@ function setSheetPos(px, animate) {
 }
 
 function snapSheet(state, animate = true, recenter = true) {
+  const allowed = availableSheetStates();
+  if (!allowed.includes(state)) state = state === 'peek' ? allowed[allowed.length - 1] : allowed[0];
   sheetState = state;
   setSheetPos(posFor(state), animate);
   mSheetBody.style.overflowY = state === 'full' ? 'auto' : 'hidden';
   if (state !== 'full') mSheetBody.scrollTop = 0; // pienennettäessä sisältö alkuun, jotta otsikkorivi näkyy
   mSheet.dataset.state = state;
+  updateSheetToggleA11y();
   updateSheetHeaderState();
   if (recenter && state !== 'full') setTimeout(recenterMapForSheet, animate ? 60 : 0);
 }
@@ -1566,6 +1639,7 @@ function setSelectedMarker(id) {
 // 0..1 asetetaan CSS-muuttujaan --hdr-p; 28 px vieritystä riittää, jotta
 // sisällön oma otsikkorivi on kokonaan kaistan alla.
 const mSheetHeaderTitle = document.getElementById('mSheetHeaderTitle');
+const mSheetHeart = document.getElementById('mSheetHeart');
 function updateSheetHeaderState() {
   const st = (sheetVisible && sheetState === 'full') ? mSheetBody.scrollTop : 0;
   const p = Math.max(0, Math.min(1, st / 28));
@@ -1574,13 +1648,22 @@ function updateSheetHeaderState() {
 }
 mSheetBody.addEventListener('scroll', updateSheetHeaderState, { passive: true });
 
+// Sisältö kääritään .m-sheet-inner-elementtiin, jonka korkeus (offsetHeight)
+// kertoo sisällön todellisen koon - itse vieritettävä body on aina vähintään
+// paneelin korkuinen, joten sen scrollHeight ei kelpaa mittaamiseen.
+function renderSheetContent(r) {
+  mSheetBody.innerHTML = `<div class="m-sheet-inner">${sheetHtml(r)}</div>`;
+  mSheetHeaderTitle.textContent = r.name;
+  // Sydän asuu sticky-otsikkokaistalla (rastin vieressä), ei vierivässä sisällössä
+  mSheetHeart.innerHTML = heartHtml(r.id);
+}
+
 function openMobileSheet(id, state) {
   const r = restaurants.find(x => x.id === id);
   if (!r) return;
   clearTimeout(sheetHideTimer);
   sheetRestaurantId = id;
-  mSheetBody.innerHTML = sheetHtml(r);
-  mSheetHeaderTitle.textContent = r.name;
+  renderSheetContent(r);
   mSheetBody.scrollTop = 0;
   mSheet.hidden = false;
   computeSheetMetrics();
@@ -1598,6 +1681,7 @@ function closeMobileSheet(immediate) {
   if (!sheetVisible) return;
   sheetVisible = false;
   sheetRestaurantId = null;
+  sheetReturnState = null;
   setSelectedMarker(null);
   updateSheetHeaderState();
   clearTimeout(sheetHideTimer);
@@ -1617,8 +1701,11 @@ function refreshMobileSheet() {
   const r = restaurants.find(x => x.id === sheetRestaurantId);
   if (!r) return;
   const scroll = mSheetBody.scrollTop;
-  mSheetBody.innerHTML = sheetHtml(r);
-  mSheetHeaderTitle.textContent = r.name;
+  renderSheetContent(r);
+  mSheetBody.scrollTop = scroll;
+  // Sisällön korkeus voi muuttua (esim. rivinvaihto) -> mitat uusiksi ilman animaatiota
+  computeSheetMetrics();
+  snapSheet(sheetState, false, false);
   mSheetBody.scrollTop = scroll;
   updateSheetHeaderState();
 }
@@ -1661,9 +1748,14 @@ function moveSheetDrag(y, e) {
     return; // siirto alkaa seuraavasta liikkeestä (lähtökohta juuri asetettu)
   }
   if (e && e.cancelable) e.preventDefault();
-  let pos = Math.max(0, d.startPos + (y - d.startY));
-  const peekPos = posFor('peek');
-  if (pos > peekPos) pos = peekPos + Math.min(36, (pos - peekPos) * 0.3); // kuminauha: vastus ja pieni ylivetovara
+  const states = availableSheetStates();
+  const topPos = posFor(states[0]);
+  const bottomPos = posFor(states[states.length - 1]);
+  let pos = d.startPos + (y - d.startY);
+  // Kuminauha: ylä- ja alarajan yli vedettäessä vastus ja pieni ylivetovara.
+  // Täysikokoisen paneelin yläraja on kova (0), muuten paneeli menisi otsikon päälle.
+  if (pos < topPos) pos = sheetFits ? topPos - Math.min(36, (topPos - pos) * 0.3) : Math.max(0, pos);
+  if (pos > bottomPos) pos = bottomPos + Math.min(36, (pos - bottomPos) * 0.3);
   sheetPos = pos;
   mSheet.style.setProperty('--sheet-y', pos + 'px');
   const now = performance.now();
@@ -1676,12 +1768,14 @@ function endSheetDrag() {
   if (!d.active) return;
   d.active = false;
   if (d.mode !== 'sheet') return;
+  sheetLastDragEnd = performance.now();
+  sheetReturnState = null; // veto määrää uuden tilan -> vanha paluutila ei enää päde
   mSheet.classList.remove('dragging');
   const projected = sheetPos + d.vel * 220; // liikemäärä: huomioidaan vetonopeus
   // Alin pysähdyskohta on peek: paneeli ei katoa vedolla (edes kovalla
   // nykäisyllä), vaan otsikko jää näkyviin alapalkin yläpuolelle. Sulkeminen
   // tehdään ×-painikkeesta, kartan napautuksesta tai Esc-näppäimellä.
-  const targets = [['full', 0], ['half', posFor('half')], ['peek', posFor('peek')]];
+  const targets = availableSheetStates().map(st => [st, posFor(st)]);
   let best = targets[0];
   targets.forEach(t => { if (Math.abs(t[1] - projected) < Math.abs(best[1] - projected)) best = t; });
   snapSheet(best[0]);
@@ -1705,6 +1799,19 @@ window.addEventListener('mousemove', (e) => { if (sheetDrag.active && sheetDrag.
 window.addEventListener('mouseup', () => { if (sheetDrag.active && sheetDrag.isMouse) endSheetDrag(); });
 
 document.getElementById('mSheetClose').onclick = () => closeMobileSheet();
+
+// Otsikkorivin napautus: kahva, sticky-kaista ja sisällön nimirivi. Sydän, rasti
+// ja linkit hoitavat omat napautuksensa. Vedon jälkeen selain voi lähettää
+// haamuklikkauksen (pieni veto = napautus) -> ohitetaan juuri vedetyn jälkeen.
+mSheet.addEventListener('click', (e) => {
+  if (performance.now() - sheetLastDragEnd < 400) return;
+  if (e.target.closest('.heart, .m-sheet-heart, .m-sheet-close, a, button')) return;
+  if (!e.target.closest('#mSheetGrab, #mSheetHeader, .sheet-title-row')) return;
+  toggleSheetByHeader();
+});
+document.getElementById('mSheetGrab').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheetByHeader(); }
+});
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetVisible) closeMobileSheet(); });
 
 // Ikkunan koon muuttuessa (kääntö, osoiterivin piiloutuminen) lasketaan mitat uudelleen.
