@@ -571,12 +571,47 @@
     padding: 9px 0 6px;
     cursor: grab;
     touch-action: none;
+    position: relative;
+    z-index: 3; /* kahva pysyy otsikkokaistan päällä */
   }
   .m-sheet-handle { width: 44px; height: 5px; border-radius: 3px; background: #c9d0cb; }
-  .m-sheet-close {
+  /* Sticky-otsikkokaista: sisältöä vieritettäessä tausta ja ravintolan nimi
+     häivytetään näkyviin (--hdr-p 0..1, asetetaan skrollauksen mukaan JS:ssä).
+     Sulje-nappi on aina käytettävissä. */
+  .m-sheet-header {
     position: absolute;
-    top: 12px;
-    right: 14px;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 54px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px 0 18px;
+    border-radius: 18px 18px 0 0;
+    background: rgba(255, 255, 255, var(--hdr-p, 0));
+    pointer-events: none; /* sisältö (esim. sydän) pysyy napautettavana kun kaista on läpinäkyvä */
+    z-index: 2;
+  }
+  .m-sheet.scrolled .m-sheet-header {
+    pointer-events: auto;
+    box-shadow: 0 1px 0 var(--line), 0 8px 12px -10px rgba(28, 43, 36, 0.35);
+  }
+  .m-sheet-header-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 30px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: var(--hdr-p, 0);
+    transform: translateY(calc((1 - var(--hdr-p, 0)) * 5px));
+  }
+  .m-sheet-close {
+    flex: 0 0 auto;
+    margin-left: auto;
     width: 30px;
     height: 30px;
     border: none;
@@ -586,7 +621,7 @@
     font-size: 18px;
     line-height: 1;
     cursor: pointer;
-    z-index: 2;
+    pointer-events: auto;
   }
   .m-sheet-body {
     flex: 1 1 auto;
@@ -609,7 +644,13 @@
   .sheet-links .website-link { margin-top: 0; font-size: 14px; }
   .sheet-addr { color: #5b6a61; }
   .m-sheet-body .hours { font-size: 14px; margin-top: 6px; }
-  .m-sheet-body .lunch-summary { margin-top: 12px; }
+  /* Lounaslista paneelissa: pelkkä sisältö valkoisella taustalla, ei haitaria */
+  .lunch-plain { margin-top: 16px; }
+  .lunch-plain .lunch-prices { font-size: 14px; margin: 0 0 6px; }
+  .lunch-plain .lunch-prices:empty { display: none; }
+  .lunch-plain .lunch-group { margin-top: 12px; }
+  .lunch-plain .lunch-group-label { font-size: 11px; margin-bottom: 3px; }
+  .lunch-plain .lunch-item { font-size: 14.5px; line-height: 1.4; margin-bottom: 3px; }
   @media (min-width: 990px) {
     .m-sheet { display: none !important; }
   }
@@ -942,7 +983,10 @@
 
 <div id="mobileSheet" class="m-sheet" role="dialog" aria-label="Ravintolan tiedot" hidden>
   <div class="m-sheet-grab" id="mSheetGrab" aria-hidden="true"><span class="m-sheet-handle"></span></div>
-  <button type="button" class="m-sheet-close" id="mSheetClose" aria-label="Sulje ravintolan tiedot">&times;</button>
+  <div class="m-sheet-header" id="mSheetHeader">
+    <span class="m-sheet-header-title" id="mSheetHeaderTitle"></span>
+    <button type="button" class="m-sheet-close" id="mSheetClose" aria-label="Sulje ravintolan tiedot">&times;</button>
+  </div>
   <div class="m-sheet-body" id="mSheetBody"></div>
 </div>
 
@@ -1452,7 +1496,7 @@ function sheetHtml(r) {
     ${genreHtml(r)}
     <div class="sheet-links">${websiteLinkHtml(r)}${addr}</div>
     ${openingHoursHtml(r)}
-    ${lunchSummaryHtml(r)}`;
+    ${lunchSummaryHtml(r, true)}`;
 }
 
 function computeSheetMetrics() {
@@ -1481,7 +1525,9 @@ function snapSheet(state, animate = true, recenter = true) {
   sheetState = state;
   setSheetPos(posFor(state), animate);
   mSheetBody.style.overflowY = state === 'full' ? 'auto' : 'hidden';
+  if (state !== 'full') mSheetBody.scrollTop = 0; // pienennettäessä sisältö alkuun, jotta otsikkorivi näkyy
   mSheet.dataset.state = state;
+  updateSheetHeaderState();
   if (recenter && state !== 'full') setTimeout(recenterMapForSheet, animate ? 60 : 0);
 }
 
@@ -1515,16 +1561,18 @@ function setSelectedMarker(id) {
   }
 }
 
-// Paneelissa lounaslista on oletuksena auki (paneelia vedetään ylös lisää
-// sisältöä varten, joten erillinen haitari olisi turha askel). Käyttäjä voi
-// silti sulkea sen otsikosta; päivityksissä (sydän/arvio) valinta säilyy.
-function setSheetLunchExpanded(expanded) {
-  const wrap = mSheetBody.querySelector('.lunch-summary');
-  if (!wrap) return;
-  wrap.classList.toggle('expanded', expanded);
-  const btn = wrap.querySelector('.lunch-toggle');
-  if (btn) btn.setAttribute('aria-expanded', String(expanded));
+// Sticky-otsikkokaista: tausta ja ravintolan nimi häivytetään näkyviin kun
+// sisältöä vieritetään (vain full-tilassa, jossa sisältö vierittyy). Arvo
+// 0..1 asetetaan CSS-muuttujaan --hdr-p; 28 px vieritystä riittää, jotta
+// sisällön oma otsikkorivi on kokonaan kaistan alla.
+const mSheetHeaderTitle = document.getElementById('mSheetHeaderTitle');
+function updateSheetHeaderState() {
+  const st = (sheetVisible && sheetState === 'full') ? mSheetBody.scrollTop : 0;
+  const p = Math.max(0, Math.min(1, st / 28));
+  mSheet.style.setProperty('--hdr-p', p.toFixed(3));
+  mSheet.classList.toggle('scrolled', p > 0.02);
 }
+mSheetBody.addEventListener('scroll', updateSheetHeaderState, { passive: true });
 
 function openMobileSheet(id, state) {
   const r = restaurants.find(x => x.id === id);
@@ -1532,7 +1580,7 @@ function openMobileSheet(id, state) {
   clearTimeout(sheetHideTimer);
   sheetRestaurantId = id;
   mSheetBody.innerHTML = sheetHtml(r);
-  setSheetLunchExpanded(true);
+  mSheetHeaderTitle.textContent = r.name;
   mSheetBody.scrollTop = 0;
   mSheet.hidden = false;
   computeSheetMetrics();
@@ -1543,6 +1591,7 @@ function openMobileSheet(id, state) {
   sheetVisible = true;
   setSelectedMarker(id);
   snapSheet(target);
+  updateSheetHeaderState();
 }
 
 function closeMobileSheet(immediate) {
@@ -1550,6 +1599,7 @@ function closeMobileSheet(immediate) {
   sheetVisible = false;
   sheetRestaurantId = null;
   setSelectedMarker(null);
+  updateSheetHeaderState();
   clearTimeout(sheetHideTimer);
   if (immediate) {
     setSheetPos(sheetFullH, false);
@@ -1567,11 +1617,10 @@ function refreshMobileSheet() {
   const r = restaurants.find(x => x.id === sheetRestaurantId);
   if (!r) return;
   const scroll = mSheetBody.scrollTop;
-  const oldWrap = mSheetBody.querySelector('.lunch-summary');
-  const wasExpanded = oldWrap ? oldWrap.classList.contains('expanded') : true;
   mSheetBody.innerHTML = sheetHtml(r);
-  setSheetLunchExpanded(wasExpanded);
+  mSheetHeaderTitle.textContent = r.name;
   mSheetBody.scrollTop = scroll;
+  updateSheetHeaderState();
 }
 
 // ----- Vetäminen -----
@@ -1612,7 +1661,9 @@ function moveSheetDrag(y, e) {
     return; // siirto alkaa seuraavasta liikkeestä (lähtökohta juuri asetettu)
   }
   if (e && e.cancelable) e.preventDefault();
-  const pos = Math.max(0, Math.min(sheetFullH, d.startPos + (y - d.startY)));
+  let pos = Math.max(0, d.startPos + (y - d.startY));
+  const peekPos = posFor('peek');
+  if (pos > peekPos) pos = peekPos + Math.min(36, (pos - peekPos) * 0.3); // kuminauha: vastus ja pieni ylivetovara
   sheetPos = pos;
   mSheet.style.setProperty('--sheet-y', pos + 'px');
   const now = performance.now();
@@ -1627,10 +1678,13 @@ function endSheetDrag() {
   if (d.mode !== 'sheet') return;
   mSheet.classList.remove('dragging');
   const projected = sheetPos + d.vel * 220; // liikemäärä: huomioidaan vetonopeus
-  const targets = [['full', 0], ['half', posFor('half')], ['peek', posFor('peek')], ['hidden', sheetFullH]];
+  // Alin pysähdyskohta on peek: paneeli ei katoa vedolla (edes kovalla
+  // nykäisyllä), vaan otsikko jää näkyviin alapalkin yläpuolelle. Sulkeminen
+  // tehdään ×-painikkeesta, kartan napautuksesta tai Esc-näppäimellä.
+  const targets = [['full', 0], ['half', posFor('half')], ['peek', posFor('peek')]];
   let best = targets[0];
   targets.forEach(t => { if (Math.abs(t[1] - projected) < Math.abs(best[1] - projected)) best = t; });
-  if (best[0] === 'hidden') closeMobileSheet(); else snapSheet(best[0]);
+  snapSheet(best[0]);
 }
 
 mSheet.addEventListener('touchstart', (e) => {
@@ -1652,16 +1706,6 @@ window.addEventListener('mouseup', () => { if (sheetDrag.active && sheetDrag.isM
 
 document.getElementById('mSheetClose').onclick = () => closeMobileSheet();
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetVisible) closeMobileSheet(); });
-
-// Lounaslistan avaaminen laajentaa paneelin täyteen kokoon, jotta sisältö näkyy.
-// Capture-vaihe, koska lunch-toggle pysäyttää tapahtuman kuplimisen.
-mSheetBody.addEventListener('click', (e) => {
-  if (!e.target.closest('.lunch-toggle, .lunch-detail')) return;
-  setTimeout(() => {
-    const wrap = mSheetBody.querySelector('.lunch-summary');
-    if (wrap && wrap.classList.contains('expanded') && sheetState !== 'full') snapSheet('full');
-  }, 0);
-}, true);
 
 // Ikkunan koon muuttuessa (kääntö, osoiterivin piiloutuminen) lasketaan mitat uudelleen.
 let sheetResizeRaf = null;
@@ -2051,6 +2095,9 @@ function allergenBadges(codes) {
 // mukaan — jos ruokanimet ovat pitkiä, rivi voi venyä. Merkkimäärän rajausta
 // (esim. CSS text-overflow:ellipsis tai JS-katkaisu "..." -päätteellä) voi
 // säätää myöhemmin kun nähdään miltä oikea data näyttää käytännössä.
+function lunchPlainHtml(detailHtml) {
+  return `<div class="lunch-plain">${detailHtml}</div>`;
+}
 function lunchToggleWrapper(summaryText, detailHtml) {
   const expandedClass = allLunchExpanded ? ' expanded' : '';
   const ariaExpanded = allLunchExpanded ? 'true' : 'false';
@@ -2065,7 +2112,9 @@ function lunchToggleWrapper(summaryText, detailHtml) {
   </div>`;
 }
 
-function lunchSummaryHtml(r) {
+// plain=true: palauttaa pelkän sisällön ilman haitaria (käytetään mobiilin
+// alapaneelissa, jossa lista näytetään suoraan valkoisella taustalla).
+function lunchSummaryHtml(r, plain = false) {
   if (!isWeekdayToday()) return '';
 
   // 1) Oikea, backendin jäsentämä data (functions/index.js syncDailyMenus) —
@@ -2086,7 +2135,7 @@ function lunchSummaryHtml(r) {
       const summaryText = real.prices && real.prices[0]
         ? `Tänään: ${real.prices[0].label} ${real.prices[0].price}`
         : 'Näytä päivän lounaslista';
-      return lunchToggleWrapper(summaryText, detail);
+      return plain ? lunchPlainHtml(detail) : lunchToggleWrapper(summaryText, detail);
     }
 
     // parseStatus === 'ok': täysin jäsennelty (esim. Poweresta-PDF)
@@ -2107,7 +2156,7 @@ function lunchSummaryHtml(r) {
     const firstMain = mains[0] ? mains[0].name : '';
     const firstPrice = real.prices && real.prices[0] ? real.prices[0].price : '';
     const summaryText = `Tänään: ${firstPrice}${firstMain ? ' · ' + escapeHtml(firstMain) : ''}${moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : ''}`;
-    return lunchToggleWrapper(summaryText, detail);
+    return plain ? lunchPlainHtml(detail) : lunchToggleWrapper(summaryText, detail);
   }
 
   // 2) Ei vielä oikeaa dataa tälle ravintolalle (esim. menuSources-riviä ei ole
