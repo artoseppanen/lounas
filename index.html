@@ -1667,7 +1667,12 @@ function openMobileSheet(id, state) {
   mSheetBody.scrollTop = 0;
   mSheet.hidden = false;
   computeSheetMetrics();
-  const target = state || (sheetVisible ? sheetState : 'half');
+  // Jokainen ravintola avautuu OMAAN oletuskokoonsa (half: lounaslistallisella
+  // keskikokoinen, lounaslistattomalla sisällön mittainen). Aiempi tila EI periydy:
+  // matalalta lounaslistattomalta paneelilta perittynä lounaslistallinen paneeli
+  // avautui helposti peekissä. Sama kuin Google Mapsissa uutta pinniä valittaessa.
+  const target = state || 'half';
+  sheetReturnState = null; // uusi ravintola, uusi lähtötilanne
   if (!sheetVisible) {
     setSheetPos(sheetFullH, false); // aloitetaan piilosta, jolloin paneeli liukuu sisään
   }
