@@ -542,6 +542,78 @@
     color: var(--paper);
   }
 
+  /* ===== Mobiilin liukuva alapaneeli (Google Mapsin tyyliin, <990px) ===== */
+  /* isolation: kartan sisäiset z-indeksit (zoom-painikkeet jne.) eivät nouse paneelin yli */
+  #map { isolation: isolate; }
+  .marker-selected { filter: hue-rotate(180deg) saturate(1.8) brightness(1.08); }
+  .m-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--sheet-h, 80vh);
+    transform: translateY(var(--sheet-y, 100vh));
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: transform;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -6px 24px rgba(28, 43, 36, 0.2);
+    z-index: 950; /* bottom-nav (1000) pysyy paneelin päällä */
+  }
+  .m-sheet[hidden] { display: none; }
+  .m-sheet.dragging, .m-sheet.no-anim { transition: none; }
+  .m-sheet-grab {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding: 9px 0 6px;
+    cursor: grab;
+    touch-action: none;
+  }
+  .m-sheet-handle { width: 44px; height: 5px; border-radius: 3px; background: #c9d0cb; }
+  .m-sheet-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: #e6e6e3;
+    color: var(--ink);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .m-sheet-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: hidden; /* vierittyy vasta täysikokoisena (ks. snapSheet) */
+    overscroll-behavior: contain;
+    padding: 0 18px calc(110px + env(safe-area-inset-bottom, 0px));
+  }
+  .sheet-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-right: 40px; /* tilaa sulkupainikkeelle */
+  }
+  .sheet-title-row h3 { margin: 0; font-size: 18px; line-height: 1.25; }
+  .m-sheet-body .rating-row { margin: 4px 0 8px; }
+  .m-sheet-body .genre { margin-bottom: 6px; }
+  .sheet-links { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 2px; font-size: 14px; }
+  .sheet-links .website-link { margin-top: 0; font-size: 14px; }
+  .sheet-addr { color: #5b6a61; }
+  .m-sheet-body .hours { font-size: 14px; margin-top: 6px; }
+  .m-sheet-body .lunch-summary { margin-top: 12px; }
+  @media (min-width: 990px) {
+    .m-sheet { display: none !important; }
+  }
+
   /* Suodatinpaneeli */
   .filter-overlay {
     position: fixed;
@@ -867,6 +939,12 @@
     <div id="map"></div>
   </div>
 </main>
+
+<div id="mobileSheet" class="m-sheet" role="dialog" aria-label="Ravintolan tiedot" hidden>
+  <div class="m-sheet-grab" id="mSheetGrab" aria-hidden="true"><span class="m-sheet-handle"></span></div>
+  <button type="button" class="m-sheet-close" id="mSheetClose" aria-label="Sulje ravintolan tiedot">&times;</button>
+  <div class="m-sheet-body" id="mSheetBody"></div>
+</div>
 
 <nav class="bottom-nav" aria-label="Näkymän valinta" role="tablist">
   <button type="button" class="navtab active" id="tabMap" role="tab" aria-selected="true">Kartta</button>
@@ -1343,12 +1421,277 @@ async function loadAllRestaurantsOnce() {
   }
 }
 
+// ===========================================================================
+// Mobiilin liukuva alapaneeli (Google Mapsin tyyliin). Alle 990 px:n
+// näytöillä markerin klikkaus avaa Leaflet-popupin sijaan vedettävän
+// alapaneelin, jolla on kolme pysähdyskohtaa: peek (vain otsikko), half
+// (puoli näyttöä) ja full (lähes koko näyttö, sisältö vierittyy).
+// ===========================================================================
+const mobileMQ = window.matchMedia('(max-width: 989px)');
+function isMobileLayout() { return mobileMQ.matches; }
+
+const mSheet = document.getElementById('mobileSheet');
+const mSheetBody = document.getElementById('mSheetBody');
+let sheetRestaurantId = null;
+let sheetVisible = false;
+let sheetState = 'half';
+let sheetPos = 0;            // paneelin translateY (px); 0 = täysin ylhäällä
+let sheetFullH = 0;          // paneelin kokonaiskorkeus (px)
+let sheetVisibleH = { peek: 0, half: 0, full: 0 };
+let selectedMarkerId = null;
+let sheetHideTimer = null;
+const sheetDrag = { active: false, mode: null, isMouse: false, fromBody: false, startY: 0, startPos: 0, lastY: 0, lastT: 0, vel: 0 };
+
+function sheetHtml(r) {
+  const addr = r.addr ? `<span class="sheet-addr">${ADDR_ICON} ${escapeHtml(r.addr)}</span>` : '';
+  return `<div class="sheet-title-row">
+      <h3>${escapeHtml(r.name)}</h3>
+      ${heartHtml(r.id)}
+    </div>
+    ${starsHtml(r.id)}
+    ${genreHtml(r)}
+    <div class="sheet-links">${websiteLinkHtml(r)}${addr}</div>
+    ${openingHoursHtml(r)}
+    ${lunchSummaryHtml(r)}`;
+}
+
+function computeSheetMetrics() {
+  const vh = window.innerHeight;
+  const headerH = document.querySelector('header').offsetHeight;
+  const navTop = document.querySelector('.bottom-nav').getBoundingClientRect().top;
+  const navClear = Math.max(0, vh - navTop) + 6; // alapalkin viemä tila
+  sheetFullH = Math.round(vh - headerH - 8);
+  sheetVisibleH = {
+    peek: Math.round(navClear + 100),
+    half: Math.round(Math.max(vh * 0.5, navClear + 230)),
+    full: sheetFullH,
+  };
+  mSheet.style.setProperty('--sheet-h', sheetFullH + 'px');
+}
+function posFor(state) { return sheetFullH - sheetVisibleH[state]; }
+
+function setSheetPos(px, animate) {
+  sheetPos = px;
+  if (animate === false) mSheet.classList.add('no-anim');
+  mSheet.style.setProperty('--sheet-y', px + 'px');
+  if (animate === false) { void mSheet.offsetHeight; mSheet.classList.remove('no-anim'); }
+}
+
+function snapSheet(state, animate = true, recenter = true) {
+  sheetState = state;
+  setSheetPos(posFor(state), animate);
+  mSheetBody.style.overflowY = state === 'full' ? 'auto' : 'hidden';
+  mSheet.dataset.state = state;
+  if (recenter && state !== 'full') setTimeout(recenterMapForSheet, animate ? 60 : 0);
+}
+
+// Siirtää kartan niin, että valittu ravintola on paneelin yläpuolella
+// näkyvän kartta-alueen keskellä (kuten Google Mapsissa).
+function recenterMapForSheet() {
+  if (!sheetVisible || sheetRestaurantId == null || sheetState === 'full') return;
+  const r = restaurants.find(x => x.id === sheetRestaurantId);
+  if (!r) return;
+  const mapRect = document.getElementById('map').getBoundingClientRect();
+  const sheetTop = window.innerHeight - sheetVisibleH[sheetState];
+  const availH = sheetTop - mapRect.top;
+  if (availH < 60) return;
+  const p = map.latLngToContainerPoint([r.lat, r.lon]);
+  const dy = (p.y - 20) - availH * 0.5; // -20: neulan kärki on ikonin alareunassa
+  const dx = p.x - mapRect.width / 2;
+  if (Math.abs(dy) > 2 || Math.abs(dx) > 2) map.panBy([dx, dy], { animate: true, duration: 0.3 });
+}
+
+function setSelectedMarker(id) {
+  const prev = selectedMarkerId && markers[selectedMarkerId];
+  if (prev) {
+    if (prev._icon) prev._icon.classList.remove('marker-selected');
+    prev.setZIndexOffset(0);
+  }
+  selectedMarkerId = id;
+  const cur = id && markers[id];
+  if (cur) {
+    if (cur._icon) cur._icon.classList.add('marker-selected');
+    cur.setZIndexOffset(1000);
+  }
+}
+
+// Paneelissa lounaslista on oletuksena auki (paneelia vedetään ylös lisää
+// sisältöä varten, joten erillinen haitari olisi turha askel). Käyttäjä voi
+// silti sulkea sen otsikosta; päivityksissä (sydän/arvio) valinta säilyy.
+function setSheetLunchExpanded(expanded) {
+  const wrap = mSheetBody.querySelector('.lunch-summary');
+  if (!wrap) return;
+  wrap.classList.toggle('expanded', expanded);
+  const btn = wrap.querySelector('.lunch-toggle');
+  if (btn) btn.setAttribute('aria-expanded', String(expanded));
+}
+
+function openMobileSheet(id, state) {
+  const r = restaurants.find(x => x.id === id);
+  if (!r) return;
+  clearTimeout(sheetHideTimer);
+  sheetRestaurantId = id;
+  mSheetBody.innerHTML = sheetHtml(r);
+  setSheetLunchExpanded(true);
+  mSheetBody.scrollTop = 0;
+  mSheet.hidden = false;
+  computeSheetMetrics();
+  const target = state || (sheetVisible ? sheetState : 'half');
+  if (!sheetVisible) {
+    setSheetPos(sheetFullH, false); // aloitetaan piilosta, jolloin paneeli liukuu sisään
+  }
+  sheetVisible = true;
+  setSelectedMarker(id);
+  snapSheet(target);
+}
+
+function closeMobileSheet(immediate) {
+  if (!sheetVisible) return;
+  sheetVisible = false;
+  sheetRestaurantId = null;
+  setSelectedMarker(null);
+  clearTimeout(sheetHideTimer);
+  if (immediate) {
+    setSheetPos(sheetFullH, false);
+    mSheet.hidden = true;
+    return;
+  }
+  setSheetPos(sheetFullH, true);
+  sheetHideTimer = setTimeout(() => { if (!sheetVisible) mSheet.hidden = true; }, 320);
+}
+
+// Päivittää auki olevan paneelin sisällön (esim. sydämen tai arvion jälkeen)
+// säilyttäen vierityskohdan.
+function refreshMobileSheet() {
+  if (!sheetVisible || !sheetRestaurantId) return;
+  const r = restaurants.find(x => x.id === sheetRestaurantId);
+  if (!r) return;
+  const scroll = mSheetBody.scrollTop;
+  const oldWrap = mSheetBody.querySelector('.lunch-summary');
+  const wasExpanded = oldWrap ? oldWrap.classList.contains('expanded') : true;
+  mSheetBody.innerHTML = sheetHtml(r);
+  setSheetLunchExpanded(wasExpanded);
+  mSheetBody.scrollTop = scroll;
+}
+
+// ----- Vetäminen -----
+function beginSheetDrag(y, fromBody, isMouse) {
+  Object.assign(sheetDrag, { active: true, mode: null, isMouse: !!isMouse, fromBody, startY: y, startPos: sheetPos, lastY: y, lastT: performance.now(), vel: 0 });
+}
+function beginSheetMove(y) {
+  mSheet.classList.add('dragging');
+  sheetDrag.startY = y; // seurataan vetoa tästä pisteestä, ei kuolleen alueen alusta (ei hyppyä)
+  sheetDrag.startPos = sheetPos;
+  sheetDrag.vel = 0;
+}
+function moveSheetDrag(y, e) {
+  const d = sheetDrag;
+  if (d.mode === null) {
+    const dy = y - d.startY;
+    if (Math.abs(dy) < 4) return; // pieni kuollut alue, ettei napautus tulkittu vedoksi
+    if (d.fromBody && sheetState === 'full') {
+      // Täysikokoisena sisältö vierittyy; vain sisällön yläreunasta alaspäin
+      // veto siirtää paneelia.
+      d.mode = (dy > 0 && mSheetBody.scrollTop <= 0) ? 'sheet' : 'scroll';
+    } else {
+      d.mode = 'sheet'; // muulloin veto mistä tahansa paneelin kohdasta liikuttaa paneelia
+    }
+    if (d.mode === 'sheet') beginSheetMove(y);
+    d.lastY = y; d.lastT = performance.now();
+    return;
+  }
+  if (d.mode === 'scroll') {
+    // Sisäkkäinen vieritys: kun sisältö on vierittynyt yläreunaan ja sormi
+    // jatkaa alaspäin, ele siirtyy kesken kaiken vetämään paneelia.
+    if (sheetState === 'full' && mSheetBody.scrollTop <= 0 && y > d.lastY) {
+      d.mode = 'sheet';
+      beginSheetMove(y);
+    }
+    d.lastY = y; d.lastT = performance.now();
+    if (d.mode !== 'sheet') return;
+    return; // siirto alkaa seuraavasta liikkeestä (lähtökohta juuri asetettu)
+  }
+  if (e && e.cancelable) e.preventDefault();
+  const pos = Math.max(0, Math.min(sheetFullH, d.startPos + (y - d.startY)));
+  sheetPos = pos;
+  mSheet.style.setProperty('--sheet-y', pos + 'px');
+  const now = performance.now();
+  // px/ms, positiivinen = alas; rajataan, ettei hurja heilautus ohita pysähdyskohtia
+  d.vel = Math.max(-2.5, Math.min(2.5, (y - d.lastY) / Math.max(1, now - d.lastT)));
+  d.lastY = y; d.lastT = now;
+}
+function endSheetDrag() {
+  const d = sheetDrag;
+  if (!d.active) return;
+  d.active = false;
+  if (d.mode !== 'sheet') return;
+  mSheet.classList.remove('dragging');
+  const projected = sheetPos + d.vel * 220; // liikemäärä: huomioidaan vetonopeus
+  const targets = [['full', 0], ['half', posFor('half')], ['peek', posFor('peek')], ['hidden', sheetFullH]];
+  let best = targets[0];
+  targets.forEach(t => { if (Math.abs(t[1] - projected) < Math.abs(best[1] - projected)) best = t; });
+  if (best[0] === 'hidden') closeMobileSheet(); else snapSheet(best[0]);
+}
+
+mSheet.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) return;
+  beginSheetDrag(e.touches[0].clientY, mSheetBody.contains(e.target), false);
+}, { passive: true });
+mSheet.addEventListener('touchmove', (e) => {
+  if (sheetDrag.active && !sheetDrag.isMouse) moveSheetDrag(e.touches[0].clientY, e);
+}, { passive: false });
+mSheet.addEventListener('touchend', () => { if (!sheetDrag.isMouse) endSheetDrag(); });
+mSheet.addEventListener('touchcancel', () => { if (!sheetDrag.isMouse) endSheetDrag(); });
+// Hiiri: kapea selainikkuna työpöydällä (veto kahvasta)
+document.getElementById('mSheetGrab').addEventListener('mousedown', (e) => {
+  beginSheetDrag(e.clientY, false, true);
+  e.preventDefault();
+});
+window.addEventListener('mousemove', (e) => { if (sheetDrag.active && sheetDrag.isMouse) moveSheetDrag(e.clientY, e); });
+window.addEventListener('mouseup', () => { if (sheetDrag.active && sheetDrag.isMouse) endSheetDrag(); });
+
+document.getElementById('mSheetClose').onclick = () => closeMobileSheet();
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetVisible) closeMobileSheet(); });
+
+// Lounaslistan avaaminen laajentaa paneelin täyteen kokoon, jotta sisältö näkyy.
+// Capture-vaihe, koska lunch-toggle pysäyttää tapahtuman kuplimisen.
+mSheetBody.addEventListener('click', (e) => {
+  if (!e.target.closest('.lunch-toggle, .lunch-detail')) return;
+  setTimeout(() => {
+    const wrap = mSheetBody.querySelector('.lunch-summary');
+    if (wrap && wrap.classList.contains('expanded') && sheetState !== 'full') snapSheet('full');
+  }, 0);
+}, true);
+
+// Ikkunan koon muuttuessa (kääntö, osoiterivin piiloutuminen) lasketaan mitat uudelleen.
+let sheetResizeRaf = null;
+window.addEventListener('resize', () => {
+  if (!sheetVisible) return;
+  cancelAnimationFrame(sheetResizeRaf);
+  sheetResizeRaf = requestAnimationFrame(() => { computeSheetMetrics(); snapSheet(sheetState, false, false); });
+});
+
+// Jos näkymä ylittää/alittaa 990 px:n rajan (esim. tabletin kääntö), markerit
+// luodaan uudelleen oikealla klikkaustavalla (paneeli vs. popup).
+const onMobileMQChange = () => { closeMobileSheet(true); rebuildMarkers(); };
+if (mobileMQ.addEventListener) mobileMQ.addEventListener('change', onMobileMQChange);
+else if (mobileMQ.addListener) mobileMQ.addListener(onMobileMQChange);
+
 function rebuildMarkers() {
   Object.values(markers).forEach(m => map.removeLayer(m));
   for (const k in markers) delete markers[k];
   restaurants.forEach(r => {
     const marker = L.marker([r.lat, r.lon]);
-    marker.bindPopup(popupHtml(r), { maxWidth: 300, minWidth: 190 });
+    if (isMobileLayout()) {
+      // Mobiili: liukuva alapaneeli popupin sijaan
+      marker.on('click', () => openMobileSheet(r.id));
+    } else {
+      marker.bindPopup(popupHtml(r), { maxWidth: 300, minWidth: 190 });
+    }
+    // Valitun markerin korostus säilyy kun suodatus poistaa/lisää markerin kartalle
+    marker.on('add', () => {
+      if (marker._icon && selectedMarkerId === r.id) marker._icon.classList.add('marker-selected');
+    });
     markers[r.id] = marker;
   });
   applyFiltersToMap();
@@ -1459,6 +1802,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 const markers = {};
+// Kartan tyhjän kohdan napautus sulkee paneelin (marker-klikkaus ei kupli kartalle)
+map.on('click', () => { if (isMobileLayout() && sheetVisible) closeMobileSheet(); });
 
 // Yksi tähtirivi: harmaa pohja + korostusvärinen täyttö keskiarvon mukaan
 // (myös puolikkaat, CSS leveys-%), ja sen päällä 5 näkymätöntä klikkausaluetta
@@ -1899,6 +2244,7 @@ window.setRating = setRating;
 
 function refreshAfterUserAction(id) {
   if (markers[id]) markers[id].setPopupContent(popupHtml(restaurants.find(r => r.id === id)));
+  if (sheetRestaurantId === id) refreshMobileSheet();
   applyFiltersToMap(); // arvostelu voi vaikuttaa "arvosana vähintään" -suodattimeen
   renderList();
   renderFavorites();
@@ -2018,8 +2364,13 @@ function focusOnMap(id) {
   showTab('map');
   setTimeout(() => {
     map.invalidateSize();
-    map.setView([r.lat, r.lon], 16);
-    if (markers[id]) markers[id].openPopup();
+    if (isMobileLayout()) {
+      map.setView([r.lat, r.lon], 16, { animate: false });
+      openMobileSheet(id, 'half');
+    } else {
+      map.setView([r.lat, r.lon], 16);
+      if (markers[id]) markers[id].openPopup();
+    }
   }, 60);
 }
 window.focusOnMap = focusOnMap;
@@ -2031,6 +2382,7 @@ map.on('moveend zoomend', () => {
 
 function showTab(which) {
   currentTab = which;
+  if (which !== 'map') closeMobileSheet(true);
   document.getElementById('tabMap').classList.toggle('active', which === 'map');
   document.getElementById('tabList').classList.toggle('active', which === 'list');
   document.getElementById('tabFav').classList.toggle('active', which === 'fav');
