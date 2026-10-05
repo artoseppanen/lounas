@@ -1038,6 +1038,22 @@ function computeCategories(rawCuisine, amenity) {
   return cats;
 }
 
+// Firestoren ravintoladokumenteissa ei ole "categories"-kenttää (backend
+// tallentaa vain raakadatan: cuisineRaw + amenity), joten tyyppisuodattimen
+// käyttämä categories lasketaan asiakaspuolella. Ilman tätä Firestoresta
+// ladatut ravintolat eivät osuisi mihinkään tyyppisuodattimeen.
+function normalizeRestaurant(r) {
+  if (!Array.isArray(r.categories)) {
+    // Varalle: jos cuisineRaw puuttuu vanhemmista dokumenteista, johdetaan se
+    // näytettävästä cuisine-tekstistä (välilyönnit takaisin alaviivoiksi).
+    const raw = r.cuisineRaw != null
+      ? r.cuisineRaw
+      : (r.cuisineUnknown ? '' : String(r.cuisine || '').replace(/ /g, '_'));
+    r.categories = computeCategories(raw, r.amenity || '');
+  }
+  return r;
+}
+
 function buildQuery(bbox) {
   const box = `${bbox.s},${bbox.w},${bbox.n},${bbox.e}`;
   return `[out:json][timeout:40];
@@ -1129,7 +1145,7 @@ async function loadFromFirestore() {
   if (snap.empty) return null;
   // Käytetään dokumentin OMAA "id"-kenttää (alkuperäinen "node/12345" -muoto),
   // ei Firestore-dokumentin sanitoitua ID:tä (doc.id, esim. "node_12345").
-  return snap.docs.map(doc => ({ ...doc.data(), id: doc.data().id || unsanitizeFirestoreId(doc.id) }));
+  return snap.docs.map(doc => normalizeRestaurant({ ...doc.data(), id: doc.data().id || unsanitizeFirestoreId(doc.id) }));
 }
 
 async function loadUserDataFromFirestore() {
@@ -1285,7 +1301,7 @@ async function loadAllRestaurantsOnce() {
 
     const cached = loadFromCache();
     if (cached) {
-      restaurants = cached.restaurants;
+      restaurants = cached.restaurants.map(normalizeRestaurant);
       if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
       rebuildMarkers();
       applyFiltersToMap();
@@ -1353,7 +1369,7 @@ function matchesFilters(r) {
   if (activeFilters.minRatingAvg > 0 && getCommunityAvg(r.id) < activeFilters.minRatingAvg) return false;
   if (activeFilters.minRatingOwn > 0 && getRating(r.id) < activeFilters.minRatingOwn) return false;
   if (activeFilters.types.size > 0) {
-    const hit = r.categories.some(c => activeFilters.types.has(c));
+    const hit = (r.categories || []).some(c => activeFilters.types.has(c));
     if (!hit) return false;
   }
   if (activeFilters.openNow) {
