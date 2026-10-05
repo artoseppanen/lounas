@@ -105,6 +105,9 @@
   }
   .loading-banner.visible { display: flex; }
   .loading-banner.error { color: #5b6a61; }
+  .retry-link { display: none; color: var(--link-blue); font-weight: 600; text-decoration: none; }
+  .retry-link:hover { text-decoration: underline; }
+  .loading-banner.error .retry-link { display: inline; }
   .spinner-icon {
     display: inline-block;
     width: 16px;
@@ -806,6 +809,7 @@
     </svg>
   </span>
   <span class="loading-text">Haetaan ravintolat…</span>
+  <a href="#" class="retry-link" id="retryLoadLink" role="button">Yritä uudelleen</a>
 </div>
 
 <main>
@@ -948,6 +952,10 @@ if (FIREBASE_ENABLED) {
 
   fbAuth = firebase.auth();
   fbDb = firebase.firestore();
+  // Jos oletusyhteys (WebChannel-streaming) ei muodosta yhteyttä (mobiiliverkot,
+  // välityspalvelimet, selainlaajennukset), Firestore vaihtaa automaattisesti
+  // long-pollingiin sen sijaan että haku epäonnistuisi ensimmäisellä kerralla.
+  fbDb.settings({ experimentalAutoDetectLongPolling: true, merge: true });
   fbReady = new Promise((resolve) => {
     fbAuth.onAuthStateChanged(user => {
       if (user) {
@@ -1065,6 +1073,11 @@ function elementToRestaurant(el) {
   };
 }
 
+document.getElementById('retryLoadLink').onclick = (e) => {
+  e.preventDefault();
+  location.reload();
+};
+
 function setLoadingBanner(state, text) {
   const el = document.getElementById('loadingBanner');
   const textEl = el.querySelector('.loading-text');
@@ -1173,15 +1186,85 @@ async function loadDailyMenusFromFirestore() {
   }
 }
 
+// Aikakatkaisu ja uudelleenyritys - ilman näitä yksittäinen hidas tai
+// epäonnistunut verkkopyyntö kaataa koko ravintoloiden haun heti.
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label}: aikakatkaisu ${ms} ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
+async function retryAsync(fn, attempts, label) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[lataus] ${label}: yritys ${i + 1}/${attempts} epäonnistui`, err);
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+// Varahaku Overpassista: kokeillaan useaa peilipalvelinta peräkkäin, kullakin
+// oma aikakatkaisunsa (sama peililista kuin backendin syncRestaurants-funktiolla).
+const OVERPASS_MIRRORS = [
+  OVERPASS_URL,
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter",
+];
+async function fetchOverpassWithMirrors(query) {
+  let lastErr;
+  for (const url of OVERPASS_MIRRORS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[lataus] Overpass ${url} epäonnistui`, err);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
 async function loadAllRestaurantsOnce() {
   try {
     if (FIREBASE_ENABLED) {
       setLoadingBanner('loading');
       try {
-        await fbReady;
-        await loadUserDataFromFirestore();
-        const fromFirestore = await loadFromFirestore();
+        // Kirjautuminen saa viedä enintään 10 s - ravintolat ovat julkisesti
+        // luettavissa (Firestore-säännöt), joten niiden haku ei saa jäädä
+        // odottamaan hidasta/epäonnistunutta anonyymiä kirjautumista.
+        await withTimeout(fbReady, 10000, 'kirjautuminen').catch((err) => {
+          console.warn('[lataus] kirjautuminen hidas/epäonnistui, jatketaan silti:', err);
+        });
+        // Ravintolat (kriittinen) haetaan uudelleenyrityksin, käyttäjädata
+        // (suosikit/arviot, EI kriittinen) rinnakkain niin ettei sen
+        // epäonnistuminen enää kaada koko hakua kuten ennen.
+        const [fromFirestore] = await Promise.all([
+          retryAsync(() => withTimeout(loadFromFirestore(), 15000, 'ravintolat'), 3, 'ravintolat'),
+          loadUserDataFromFirestore().catch((err) => {
+            console.error('[lataus] käyttäjädatan haku epäonnistui (ei kriittinen):', err);
+          }),
+        ]);
         if (fromFirestore) {
+          saveToCache(fromFirestore); // varalle: seuraavan epäonnistuneen haun jälkeen näytetään edes tämä
           restaurants = fromFirestore;
           await loadDailyMenusFromFirestore();
           rebuildMarkers();
@@ -1217,13 +1300,7 @@ async function loadAllRestaurantsOnce() {
     setLoadingBanner('loading');
     try {
       const query = buildQuery(TAMPERE_BBOX);
-      const res = await fetch(OVERPASS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "data=" + encodeURIComponent(query)
-      });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const data = await res.json();
+      const data = await fetchOverpassWithMirrors(query);
       restaurants = data.elements
         .map(elementToRestaurant)
         .filter(r => r.lat && r.lon);
@@ -1237,7 +1314,8 @@ async function loadAllRestaurantsOnce() {
       updateFavTabLabel();
       setLoadingBanner('done');
     } catch (err) {
-      setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
+      console.error('[lataus] kaikki hakureitit epäonnistuivat (Firestore, välimuisti, Overpass):', err);
+      setLoadingBanner('error', 'Ravintoloiden haku epäonnistui.');
     }
   } catch (outerErr) {
     // Viimeinen turvaverkko: jos jokin yllä olevista haaroista heittää
@@ -1245,7 +1323,7 @@ async function loadAllRestaurantsOnce() {
     // varmistetaan silti ettei latausbanneri jää ikuisesti jumiin "Haetaan..."
     // -tilaan.
     console.error('Odottamaton virhe ravintoloiden latauksessa:', outerErr);
-    setLoadingBanner('error', 'Ravintoloiden haku epäonnistui. Yritä uudelleen.');
+    setLoadingBanner('error', 'Ravintoloiden haku epäonnistui.');
   }
 }
 
