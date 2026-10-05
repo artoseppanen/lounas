@@ -23,6 +23,7 @@
     --accent-text: #0f7872; /* tummennettu versio accentista: täyttää 4.5:1 tekstinä valkoisella/vaalealla */
     --link-blue: #0a6e9c; /* sinisempi, saavutettava (5.64:1) tekstilinkeille/-napeille */
     --accent-soft: #e7d9c9;
+    --select-orange: #f08a24; /* valitun ravintolan korostus (vastaa oranssia markeria) */
     --line: #d8d0c0;
     --line-strong: #97845e; /* tummennettu reuna interaktiivisille komponenteille (3:1 vaatimus) */
     --muted: #5b6a61; /* korvaa aiemman liian vaalean #93998f:n (2.9:1 -> ei täyttänyt 4.5:1) */
@@ -301,6 +302,18 @@
     border-color: #fff;
   }
   .card:active { background: var(--accent-soft); }
+  /* Valittu ravintola (työpöydällä markerin tai kortin klikkaus): kevyt oranssi kehys */
+  .card.card-selected, .card.card-selected:hover {
+    border-color: var(--select-orange);
+    box-shadow: 0 0 0 2px rgba(240, 138, 36, 0.30), 0 4px 14px rgba(28, 43, 36, 0.12);
+  }
+  @keyframes cardPulse {
+    0%   { box-shadow: 0 0 0 2px rgba(240, 138, 36, 0.60), 0 4px 14px rgba(28, 43, 36, 0.12); }
+    55%  { box-shadow: 0 0 0 10px rgba(240, 138, 36, 0.16), 0 4px 14px rgba(28, 43, 36, 0.12); }
+    100% { box-shadow: 0 0 0 2px rgba(240, 138, 36, 0.30), 0 4px 14px rgba(28, 43, 36, 0.12); }
+  }
+  .card.card-flash { animation: cardPulse 0.9s ease-out 1; }
+  @media (prefers-reduced-motion: reduce) { .card.card-flash { animation: none; } }
   .card-top, .popup-top {
     display: flex;
     justify-content: space-between;
@@ -1632,6 +1645,7 @@ function setSelectedMarker(id) {
     if (cur._icon) cur._icon.classList.add('marker-selected');
     cur.setZIndexOffset(1000);
   }
+  applyCardHighlight();
 }
 
 // Sticky-otsikkokaista: tausta ja ravintolan nimi häivytetään näkyviin kun
@@ -1817,7 +1831,14 @@ mSheet.addEventListener('click', (e) => {
 document.getElementById('mSheetGrab').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSheetByHeader(); }
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetVisible) closeMobileSheet(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (sheetVisible) { closeMobileSheet(); return; }
+  // Työpöytä: Esc poistaa valinnan (ei kun kirjoitetaan hakua tai suodatinpaneeli on auki)
+  if (isMobileLayout() || (e.target.closest && e.target.closest('input, textarea'))) return;
+  if (document.querySelector('.filter-overlay.open')) return;
+  clearSelection();
+});
 
 // Ikkunan koon muuttuessa (kääntö, osoiterivin piiloutuminen) lasketaan mitat uudelleen.
 let sheetResizeRaf = null;
@@ -1827,26 +1848,152 @@ window.addEventListener('resize', () => {
   sheetResizeRaf = requestAnimationFrame(() => { computeSheetMetrics(); snapSheet(sheetState, false, false); });
 });
 
-// Jos näkymä ylittää/alittaa 990 px:n rajan (esim. tabletin kääntö), markerit
-// luodaan uudelleen oikealla klikkaustavalla (paneeli vs. popup).
-const onMobileMQChange = () => { closeMobileSheet(true); rebuildMarkers(); };
+// Jos näkymä ylittää/alittaa 990 px:n rajan (esim. tabletin kääntö), suljetaan
+// paneeli ja puretaan valinta. Klikkaustapa (paneeli vs. työpöydän valinta)
+// päätetään klikkaushetkellä (ks. onMarkerClick), joten markereita ei tarvitse luoda uudelleen.
+const onMobileMQChange = () => { closeMobileSheet(true); clearSelection(); };
 if (mobileMQ.addEventListener) mobileMQ.addEventListener('change', onMobileMQChange);
 else if (mobileMQ.addListener) mobileMQ.addListener(onMobileMQChange);
+
+// ===========================================================================
+// Työpöydän valinta: markerin klikkaus ei avaa popupia vaan valitsee ravintolan.
+// Marker muuttuu oranssiksi, sivupalkin listasta vieritetään esiin ravintolan
+// kortti ja sen kehys korostetaan. Mobiilissa vastaava on alapaneeli.
+// Valinta (selectedMarkerId) on yhteinen mobiilin kanssa.
+// ===========================================================================
+let revealPendingUntil = 0; // aikaikkuna jossa uudelleenpiirto vierittää valitun kortin uudelleen näkyviin
+
+function findCardEl(containerId, id) {
+  const root = document.getElementById(containerId);
+  if (!root) return null;
+  return Array.from(root.querySelectorAll('.card[data-restaurant-id]')).find(c => c.dataset.restaurantId === id) || null;
+}
+
+// Päivittää korostuksen jo piirretyille korteille ilman uudelleenpiirtoa
+// (uudelleenpiirrossa cardHtml lisää luokan itse).
+function applyCardHighlight() {
+  document.querySelectorAll('.card[data-restaurant-id]').forEach(c => {
+    c.classList.toggle('card-selected', !!selectedMarkerId && c.dataset.restaurantId === selectedMarkerId);
+  });
+}
+
+function flashCard(card) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  card.classList.remove('card-flash');
+  void card.offsetWidth; // käynnistää animaation uudelleen
+  card.classList.add('card-flash');
+  card.addEventListener('animationend', () => card.classList.remove('card-flash'), { once: true });
+}
+
+// Vierittää kortin näkyviin vain jos se ei jo ole kokonaan näkyvissä; sticky-
+// työkalurivin alle jäävä osa lasketaan näkymättömäksi. Keskittää kortin
+// näkyvään alueeseen (tai asettaa kortin yläreunan alueen alkuun jos kortti on
+// aluetta korkeampi).
+function scrollCardIntoView(card, container, flash) {
+  const toolbar = container.querySelector('.list-toolbar, .fav-toolbar');
+  const tbH = toolbar ? toolbar.offsetHeight : 0;
+  const cRect = container.getBoundingClientRect();
+  const r = card.getBoundingClientRect();
+  const margin = 8;
+  const topEdge = cRect.top + tbH + margin;
+  const bottomEdge = cRect.bottom - margin;
+  const visibleH = bottomEdge - topEdge;
+  const fullyVisible = r.top >= topEdge && r.bottom <= bottomEdge;
+  if (!fullyVisible && visibleH > 0) {
+    const cardTopInContent = (r.top - cRect.top) + container.scrollTop;
+    const desired = r.height > visibleH
+      ? cardTopInContent - (tbH + margin)
+      : cardTopInContent + r.height / 2 - (tbH + margin) - visibleH / 2;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    container.scrollTo({ top: Math.max(0, desired), behavior: reduced ? 'auto' : 'smooth' });
+  }
+  if (flash) flashCard(card);
+}
+
+function activeSidebarViewIds() {
+  const favActive = document.getElementById('favView').classList.contains('d-active');
+  return favActive ? ['favView', 'favCards'] : ['listView', 'listCards'];
+}
+
+function scrollSelectedCardIntoView(flash) {
+  const id = selectedMarkerId;
+  if (!id) return false;
+  const [viewId, cardsId] = activeSidebarViewIds();
+  const card = findCardEl(cardsId, id);
+  if (!card) return false;
+  scrollCardIntoView(card, document.getElementById(viewId), flash);
+  return true;
+}
+
+// Varmistaa että ravintola on listassa: tarvittaessa tyhjentää nimihaun,
+// siirtää karttaa sisäänpäin (reunalla oleva marker) tai vaihtaa "Kaikki ravintolat" -näkymään.
+function ensureRestaurantInList(id) {
+  if (findCardEl('listCards', id)) return;
+  const r = restaurants.find(x => x.id === id);
+  if (!r) return;
+  if (nameQuery.length >= 2 && !r.name.toLowerCase().includes(nameQuery)) {
+    nameSearchInput.value = '';
+    searchClearBtn.classList.remove('visible');
+    clearTimeout(nameSearchTimer);
+    nameQuery = '';
+    applyFiltersToMap();
+    renderList();
+    renderFavorites();
+  }
+  if (findCardEl('listCards', id)) return;
+  if (listFilterMode === 'visible') {
+    map.panInside([r.lat, r.lon], { padding: [60, 60], animate: false }); // moveend piirtää listan uudelleen
+    renderList();
+  }
+  if (findCardEl('listCards', id)) return;
+  listFilterMode = 'all';
+  document.getElementById('filterAll').classList.add('active');
+  document.getElementById('filterVisible').classList.remove('active');
+  renderList();
+}
+
+function revealSelectedInSidebar() {
+  const id = selectedMarkerId;
+  if (!id || isMobileLayout()) return;
+  const favActive = document.getElementById('favView').classList.contains('d-active');
+  if (!(favActive && isFav(id))) {
+    if (favActive) showSidebarTab('list'); // ei suosikki -> näytetään listassa
+    ensureRestaurantInList(id);
+  }
+  revealPendingUntil = performance.now() + 1500; // listan uudelleenpiirrot (esim. kartan siirto) pitävät kortin näkyvissä
+  scrollSelectedCardIntoView(true);
+}
+
+function selectRestaurantDesktop(id) {
+  setSelectedMarker(id);
+  revealSelectedInSidebar();
+}
+
+function clearSelection() {
+  if (!selectedMarkerId) return;
+  revealPendingUntil = 0;
+  setSelectedMarker(null);
+}
+
+function onMarkerClick(id) {
+  if (isMobileLayout()) openMobileSheet(id);
+  else selectRestaurantDesktop(id);
+}
 
 function rebuildMarkers() {
   Object.values(markers).forEach(m => map.removeLayer(m));
   for (const k in markers) delete markers[k];
   restaurants.forEach(r => {
     const marker = L.marker([r.lat, r.lon]);
-    if (isMobileLayout()) {
-      // Mobiili: liukuva alapaneeli popupin sijaan
-      marker.on('click', () => openMobileSheet(r.id));
-    } else {
-      marker.bindPopup(popupHtml(r), { maxWidth: 300, minWidth: 190 });
-    }
+    // Ei popupia: mobiilissa avautuu alapaneeli, työpöydällä valitaan ravintola
+    // (oranssi marker + kortin korostus sivupalkissa), ks. onMarkerClick.
+    marker.on('click', () => onMarkerClick(r.id));
     // Valitun markerin korostus säilyy kun suodatus poistaa/lisää markerin kartalle
     marker.on('add', () => {
-      if (marker._icon && selectedMarkerId === r.id) marker._icon.classList.add('marker-selected');
+      if (marker._icon && selectedMarkerId === r.id) {
+        marker._icon.classList.add('marker-selected');
+        marker.setZIndexOffset(1000);
+      }
     });
     markers[r.id] = marker;
   });
@@ -1958,8 +2105,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 const markers = {};
-// Kartan tyhjän kohdan napautus sulkee paneelin (marker-klikkaus ei kupli kartalle)
-map.on('click', () => { if (isMobileLayout() && sheetVisible) closeMobileSheet(); });
+// Kartan tyhjän kohdan klikkaus: mobiilissa sulkee paneelin, työpöydällä poistaa
+// valinnan (marker-klikkaus ei kupli kartalle)
+map.on('click', () => {
+  if (isMobileLayout()) { if (sheetVisible) closeMobileSheet(); }
+  else clearSelection();
+});
 
 // Yksi tähtirivi: harmaa pohja + korostusvärinen täyttö keskiarvon mukaan
 // (myös puolikkaat, CSS leveys-%), ja sen päällä 5 näkymätöntä klikkausaluetta
@@ -2322,21 +2473,6 @@ function genreHtml(r) {
   return `<span class="genre">${escapeHtml(r.cuisine)}</span>`;
 }
 
-function popupHtml(r) {
-  return `<div class="popup-top">
-      <h3>${escapeHtml(r.name)}</h3>
-      ${heartHtml(r.id)}
-    </div>
-    ${genreHtml(r)}
-    <div class="addr">${r.addr ? ADDR_ICON + ' ' + escapeHtml(r.addr) : ''}</div>
-    ${openingHoursHtml(r)}
-    ${websiteLinkHtml(r)}
-    ${lunchSummaryHtml(r)}
-    <div class="popup-actions">
-      ${starsHtml(r.id)}
-    </div>`;
-}
-
 function toggleFav(id) {
   userData[id] = userData[id] || {};
   userData[id].fav = !userData[id].fav;
@@ -2404,7 +2540,6 @@ function setRating(id, val) {
 window.setRating = setRating;
 
 function refreshAfterUserAction(id) {
-  if (markers[id]) markers[id].setPopupContent(popupHtml(restaurants.find(r => r.id === id)));
   if (sheetRestaurantId === id) refreshMobileSheet();
   applyFiltersToMap(); // arvostelu voi vaikuttaa "arvosana vähintään" -suodattimeen
   renderList();
@@ -2451,7 +2586,7 @@ function updateFavTabLabel() {
 
 function cardHtml(r) {
   return `
-    <div class="card" role="button" tabindex="0" aria-label="Näytä ${escapeHtml(r.name)} kartalla"
+    <div class="card${selectedMarkerId === r.id ? ' card-selected' : ''}" data-restaurant-id="${escapeHtml(r.id)}" role="button" tabindex="0" aria-label="Näytä ${escapeHtml(r.name)} kartalla"
       onclick="focusOnMap('${r.id}')"
       onkeydown="if(event.target===event.currentTarget && (event.key==='Enter'||event.key===' ')){event.preventDefault(); focusOnMap('${r.id}');}">
       <div class="card-top">
@@ -2506,6 +2641,7 @@ function renderList() {
     : 'Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.';
   el.innerHTML = list.length ? cardGroupsHtml(list) : `<p class="empty-hint">${emptyHint}</p>`;
   updateHeaderInfo();
+  if (performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
 }
 
 function renderFavorites() {
@@ -2514,6 +2650,7 @@ function renderFavorites() {
     .filter(r => isFav(r.id))
     .sort((a, b) => getRating(b.id) - getRating(a.id) || a.name.localeCompare(b.name, 'fi'));
   el.innerHTML = favs.length ? cardGroupsHtml(favs) : '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
+  if (performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
 }
 
 function focusOnMap(id) {
@@ -2530,7 +2667,7 @@ function focusOnMap(id) {
       openMobileSheet(id, 'half');
     } else {
       map.setView([r.lat, r.lon], 16);
-      if (markers[id]) markers[id].openPopup();
+      selectRestaurantDesktop(id); // oranssi marker + kortin korostus (ei popupia)
     }
   }, 60);
 }
