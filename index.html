@@ -24,6 +24,7 @@
     --link-blue: #0a6e9c; /* sinisempi, saavutettava (5.64:1) tekstilinkeille/-napeille */
     --accent-soft: #e7d9c9;
     --select-orange: #f08a24; /* valitun ravintolan korostus (vastaa oranssia markeria) */
+    --select-border: #b35500; /* valitun kortin kehys: 4.98:1 valkoista vasten (1.4.11) */
     --line: #d8d0c0;
     --line-strong: #97845e; /* tummennettu reuna interaktiivisille komponenteille (3:1 vaatimus) */
     --muted: #5b6a61; /* korvaa aiemman liian vaalean #93998f:n (2.9:1 -> ei täyttänyt 4.5:1) */
@@ -106,9 +107,9 @@
   }
   .loading-banner.visible { display: flex; }
   .loading-banner.error { color: #5b6a61; }
-  .retry-link { display: none; color: var(--link-blue); font-weight: 600; text-decoration: none; }
+  .retry-link { display: none; align-items: center; min-height: 24px; padding: 2px 4px; background: none; border: none; font: inherit; font-weight: 600; color: var(--link-blue); cursor: pointer; }
   .retry-link:hover { text-decoration: underline; }
-  .loading-banner.error .retry-link { display: inline; }
+  .loading-banner.error .retry-link { display: inline-flex; }
   .spinner-icon {
     display: inline-block;
     width: 16px;
@@ -143,7 +144,11 @@
     display: none;
     background: #f2f2f0;
     padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+    /* 2.4.11: näppäimistöfokus vierittää kohteen sticky-työkalurivin ja kelluvan alapalkin ulkopuolelle */
+    scroll-padding-top: 150px;
+    scroll-padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
   }
+  #favView { scroll-padding-top: 70px; }
   @media (max-width: 989px) {
     #map, #listView, #favView { display: none; }
     #map.m-active, #listView.m-active, #favView.m-active { display: block; }
@@ -168,7 +173,9 @@
     margin-bottom: 8px;
   }
   .toggle-all-lunch-btn {
-    display: block;
+    display: flex;
+    align-items: center;
+    min-height: 24px; /* 2.5.8 */
     margin: 0;
     padding: 0;
     background: none;
@@ -241,9 +248,10 @@
     color: var(--ink);
   }
   .name-search:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--accent-text);
     outline-offset: 1px;
   }
+  .name-search::placeholder { color: var(--muted); opacity: 1; } /* 5.7:1, ei selainoletusta */
   .name-search::-webkit-search-cancel-button { display: none; }
   .search-icon {
     position: absolute;
@@ -304,7 +312,7 @@
   .card:active { background: var(--accent-soft); }
   /* Valittu ravintola (työpöydällä markerin tai kortin klikkaus): kevyt oranssi kehys */
   .card.card-selected, .card.card-selected:hover {
-    border-color: var(--select-orange);
+    border-color: var(--select-border);
     box-shadow: 0 0 0 2px rgba(240, 138, 36, 0.30), 0 4px 14px rgba(28, 43, 36, 0.12);
   }
   @keyframes cardPulse {
@@ -325,18 +333,34 @@
     margin: 0;
     font-size: 15.5px;
   }
+  /* Otsikko on painike (näytä kartalla): näppäimistö- ja ruudunlukijakäyttö ilman sisäkkäisiä
+     interaktiivisia elementtejä. Ulkoasu ei muutu. */
+  .card-title-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
   .genre {
     display: inline-block;
-    font-size: 11.5px;
+    font-size: 12.5px;
     color: #3d453f;
     background: #e3e3e0;
     padding: 3px 9px;
-    border-radius: 999px;
-    white-space: nowrap;
+    border-radius: 12px;
+    max-width: 100%;
+    overflow-wrap: anywhere; /* 1.4.10: pitkä tyyppiteksti rivittyy eikä aiheuta vaakavieritystä */
   }
   .addr {
     margin: 5px 0 0;
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: #5b6a61;
   }
   .pin-icon {
@@ -345,9 +369,11 @@
     margin-right: 2px;
   }
   .website-link {
-    display: inline-block;
-    margin-top: 6px;
-    font-size: 12.5px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px; /* 2.5.8 */
+    margin-top: 4px;
+    font-size: 13.5px;
     color: var(--link-blue);
     text-decoration: none;
   }
@@ -378,7 +404,7 @@
     text-align: left;
     color: var(--ink);
   }
-  .lunch-toggle-text { font-size: 12.5px; }
+  .lunch-toggle-text { font-size: 13.5px; }
   .lunch-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
   .lunch-summary.expanded .lunch-chevron { transform: rotate(180deg); }
   .lunch-detail {
@@ -388,7 +414,7 @@
   }
   .lunch-summary.expanded .lunch-detail { display: block; }
   .lunch-prices {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--ink);
     margin: 8px 0 6px;
@@ -396,22 +422,22 @@
   .lunch-group { margin-top: 6px; }
   .lunch-group-label {
     display: block;
-    font-size: 10.5px;
+    font-size: 11.5px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--muted);
     margin-bottom: 2px;
   }
   .lunch-item {
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: var(--ink);
     margin-bottom: 2px;
   }
   .allergen-badge {
     display: inline-block;
-    font-size: 9.5px;
+    font-size: 10.5px;
     font-weight: 600;
-    color: var(--muted);
+    color: #4f5d55; /* 5.39:1 taustaa #e3e3e0 vasten (--muted antoi 4.44:1) */
     background: #e3e3e0;
     border-radius: 4px;
     padding: 0 3px;
@@ -420,7 +446,7 @@
   }
   .hours {
     margin: 4px 0 0;
-    font-size: 12.5px;
+    font-size: 13.5px;
     color: #5b6a61;
   }
   .hours.hours-warning {
@@ -475,7 +501,7 @@
     display: inline-flex;
     gap: 4px;
     height: 1.2em;
-    font-size: 21px;
+    font-size: 22px;
     line-height: 1;
   }
   .star-slot {
@@ -489,7 +515,7 @@
     inset: 0;
     white-space: nowrap;
   }
-  .star-empty { color: var(--line); }
+  .star-empty { color: #7d8780; } /* 3.72:1 valkoista vasten (1.4.11); aiempi --line antoi 1.53:1 */
   .star-fill {
     overflow: hidden;
     width: 0%;
@@ -506,7 +532,8 @@
   .star-btn {
     position: absolute;
     inset: 0;
-    width: 100%;
+    left: -1px; /* 2.5.8: kohde 22 -> 24 px leveä, ei limity naapuriin (väli 4 px) */
+    width: calc(100% + 2px);
     height: 100%;
     background: none;
     border: none;
@@ -515,7 +542,7 @@
     cursor: pointer;
   }
   .rating-meta {
-    font-size: 11.5px;
+    font-size: 12.5px;
     color: #5b6a61;
     white-space: nowrap;
   }
@@ -559,6 +586,9 @@
   /* isolation: kartan sisäiset z-indeksit (zoom-painikkeet jne.) eivät nouse paneelin yli */
   #map { isolation: isolate; }
   .marker-selected { filter: hue-rotate(180deg) saturate(1.8) brightness(1.08); }
+  /* Valittu marker on myös ~20 % suurempi (1.4.1: ei vain väri). Kärki pysyy samassa pisteessä:
+     ankkuri on alareunan keskellä, joten marginaalit skaalataan mukana. */
+  .leaflet-marker-icon.marker-selected { width: 31px !important; height: 50px !important; margin-left: -15px !important; margin-top: -50px !important; }
   .m-sheet {
     position: fixed;
     left: 0;
@@ -581,7 +611,7 @@
     flex: 0 0 auto;
     display: flex;
     justify-content: center;
-    padding: 9px 0 6px;
+    padding: 11px 0 8px; /* 24 px korkea kohde (2.5.8; aiemmin 20 px) */
     cursor: grab;
     touch-action: none;
     position: relative;
@@ -589,7 +619,7 @@
   }
   .m-sheet-grab, .sheet-title-row { -webkit-tap-highlight-color: transparent; cursor: pointer; }
   .m-sheet-grab:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -3px; border-radius: 12px; }
-  .m-sheet-handle { width: 44px; height: 5px; border-radius: 3px; background: #c9d0cb; }
+  .m-sheet-handle { width: 44px; height: 5px; border-radius: 3px; background: #7d8780; } /* 3.72:1 (1.4.11) */
   /* Sticky-otsikkokaista: sisältöä vieritettäessä tausta ja ravintolan nimi
      häivytetään näkyviin (--hdr-p 0..1, asetetaan skrollauksen mukaan JS:ssä).
      Sydän ja sulje-nappi ovat samalla rivillä ja aina käytettävissä. */
@@ -598,11 +628,11 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 58px;
+    height: 62px;
     display: flex;
     align-items: flex-start;
     gap: 6px;
-    padding: 20px 14px 0 18px; /* sama rivi kuin sisällön otsikko (kahvan alla) */
+    padding: 24px 14px 0 18px; /* sama rivi kuin sisällön otsikko (kahvan alla, 24 px) */
     border-radius: 18px 18px 0 0;
     background: rgba(255, 255, 255, var(--hdr-p, 0));
     pointer-events: none; /* sisältö pysyy napautettavana kun kaista on läpinäkyvä; sydän ja rasti ottavat osumat itse */
@@ -654,6 +684,8 @@
   }
   .m-sheet-inner { display: flow-root; } /* sisältö mitattavissa: lapsien marginaalit pysyvät sisällä */
   .m-sheet-body {
+    scroll-padding-top: 70px; /* sticky-otsikkokaista (2.4.11) */
+    scroll-padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)); /* kelluva alapalkki */
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: hidden; /* vierittyy vasta täysikokoisena (ks. snapSheet) */
@@ -666,20 +698,20 @@
     min-height: 30px; /* sama korkeus kuin sydän/rasti -> nimi, sydän ja rasti samalla tasolla */
     padding-right: 76px; /* tilaa kaistan sydämelle ja rastille */
   }
-  .sheet-title-row h3 { margin: 0; font-size: 18px; line-height: 1.25; }
+  .sheet-title-row h2 { margin: 0; font-size: 18px; line-height: 1.25; }
   .m-sheet-body .rating-row { margin: 4px 0 8px; }
   .m-sheet-body .genre { margin-bottom: 6px; }
-  .sheet-links { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 2px; font-size: 14px; }
-  .sheet-links .website-link { margin-top: 0; font-size: 14px; }
+  .sheet-links { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 2px; font-size: 15px; }
+  .sheet-links .website-link { margin-top: 0; font-size: 15px; }
   .sheet-addr { color: #5b6a61; }
-  .m-sheet-body .hours { font-size: 14px; margin-top: 6px; }
+  .m-sheet-body .hours { font-size: 15px; margin-top: 6px; }
   /* Lounaslista paneelissa: pelkkä sisältö valkoisella taustalla, ei haitaria */
   .lunch-plain { margin-top: 16px; }
-  .lunch-plain .lunch-prices { font-size: 14px; margin: 0 0 6px; }
+  .lunch-plain .lunch-prices { font-size: 15px; margin: 0 0 6px; }
   .lunch-plain .lunch-prices:empty { display: none; }
   .lunch-plain .lunch-group { margin-top: 12px; }
-  .lunch-plain .lunch-group-label { font-size: 11px; margin-bottom: 3px; }
-  .lunch-plain .lunch-item { font-size: 14.5px; line-height: 1.4; margin-bottom: 3px; }
+  .lunch-plain .lunch-group-label { font-size: 12px; margin-bottom: 3px; }
+  .lunch-plain .lunch-item { font-size: 15.5px; line-height: 1.4; margin-bottom: 3px; }
   @media (min-width: 990px) {
     .m-sheet { display: none !important; }
   }
@@ -713,6 +745,7 @@
     color: var(--accent-text);
     cursor: pointer;
     padding: 4px 6px;
+    min-height: 24px; /* 2.5.8 */
   }
   .filter-body {
     flex: 1;
@@ -951,12 +984,12 @@
     </svg>
   </span>
   <span class="loading-text">Haetaan ravintolat…</span>
-  <a href="#" class="retry-link" id="retryLoadLink" role="button">Yritä uudelleen</a>
+  <button type="button" class="retry-link" id="retryLoadLink">Yritä uudelleen</button>
 </div>
 
 <main>
   <div id="sidebar">
-    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="Laajenna näkymä" aria-expanded="false">
+    <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" aria-label="Laajenna sivupalkki" aria-expanded="false">
       <svg viewBox="0 0 20 20" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="1.5" y="2.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.4"/>
         <line x1="7.5" y1="2.5" x2="7.5" y2="17.5" stroke="currentColor" stroke-width="1.4"/>
@@ -964,11 +997,12 @@
     </button>
     <div class="sidebar-inner" id="sidebarInner">
       <div class="sidebar-tabs" id="sidebarTabs" role="tablist" aria-label="Lista tai suosikit">
-        <button class="sidebar-tab active" id="sbTabList" role="tab" aria-selected="true">Lista</button>
-        <button class="sidebar-tab" id="sbTabFav" role="tab" aria-selected="false">Suosikit</button>
+        <button class="sidebar-tab active" id="sbTabList" role="tab" aria-selected="true" aria-controls="listView" tabindex="0">Lista</button>
+        <button class="sidebar-tab" id="sbTabFav" role="tab" aria-selected="false" aria-controls="favView" tabindex="-1">Suosikit</button>
       </div>
 
-      <div id="listView">
+      <div id="listView" role="tabpanel" aria-labelledby="sbTabList">
+        <h2 class="visually-hidden">Ravintolat</h2>
         <div class="list-toolbar">
           <div class="search-wrap">
             <label for="nameSearch" class="visually-hidden">Hae ravintolaa nimellä</label>
@@ -996,7 +1030,8 @@
         <div id="listCards"></div>
       </div>
 
-      <div id="favView">
+      <div id="favView" role="tabpanel" aria-labelledby="sbTabFav">
+        <h2 class="visually-hidden">Suosikit</h2>
         <div class="fav-toolbar">
           <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunchFav">Avaa lounaslistat</button>
         </div>
@@ -1010,8 +1045,8 @@
   </div>
 </main>
 
-<div id="mobileSheet" class="m-sheet" role="dialog" aria-label="Ravintolan tiedot" hidden>
-  <div class="m-sheet-grab" id="mSheetGrab" role="button" tabindex="0" aria-label="Laajenna ravintolan tiedot" aria-expanded="false"><span class="m-sheet-handle"></span></div>
+<div id="mobileSheet" class="m-sheet" role="dialog" aria-labelledby="sheetTitle" hidden>
+  <div class="m-sheet-grab" id="mSheetGrab" role="button" tabindex="0" aria-label="Laajenna ravintolan tiedot" aria-expanded="false"><span class="m-sheet-handle" aria-hidden="true"></span></div>
   <div class="m-sheet-header" id="mSheetHeader">
     <span class="m-sheet-header-title" id="mSheetHeaderTitle"></span>
     <span class="m-sheet-heart" id="mSheetHeart"></span>
@@ -1020,11 +1055,14 @@
   <div class="m-sheet-body" id="mSheetBody"></div>
 </div>
 
-<nav class="bottom-nav" aria-label="Näkymän valinta" role="tablist">
-  <button type="button" class="navtab active" id="tabMap" role="tab" aria-selected="true">Kartta</button>
-  <button type="button" class="navtab" id="tabList" role="tab" aria-selected="false">Lista</button>
-  <button type="button" class="navtab" id="tabFav" role="tab" aria-selected="false">♥ (0)</button>
+<nav class="bottom-nav" aria-label="Näkymän valinta">
+  <button type="button" class="navtab active" id="tabMap" aria-current="true">Kartta</button>
+  <button type="button" class="navtab" id="tabList">Lista</button>
+  <button type="button" class="navtab" id="tabFav" aria-label="Suosikit (0)">♥ (0)</button>
 </nav>
+
+<!-- 4.1.3: tilaviestit ruudunlukijalle (suosikit, arviot, hakutulosten määrä, suodatuksen tulos) -->
+<div id="liveStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <div class="filter-backdrop" id="filterBackdrop"></div>
 <div class="filter-overlay" id="filterOverlay" role="dialog" aria-modal="true" aria-labelledby="filterTitle" hidden>
@@ -1515,6 +1553,7 @@ let sheetVisibleH = { peek: 0, half: 0, full: 0 };
 let sheetFits = false;       // true: koko sisältö mahtuu half-korkeuteen -> matala, sisällön mittainen paneeli
 let selectedMarkerId = null;
 let sheetHideTimer = null;
+let sheetOpenerEl = null;     // elementti josta paneeli avattiin; fokus palautetaan siihen suljettaessa
 let sheetReturnState = null; // tila josta otsikkorivin napautus laajensi paneelin -> takaisin tähän
 let sheetLastDragEnd = -1e9; // vedon päättymisaika (ms), jolla estetään vedon jälkeinen haamuklikkaus
 const sheetDrag = { active: false, mode: null, isMouse: false, fromBody: false, startY: 0, startPos: 0, lastY: 0, lastT: 0, vel: 0 };
@@ -1522,7 +1561,7 @@ const sheetDrag = { active: false, mode: null, isMouse: false, fromBody: false, 
 function sheetHtml(r) {
   const addr = r.addr ? `<span class="sheet-addr">${ADDR_ICON} ${escapeHtml(r.addr)}</span>` : '';
   return `<div class="sheet-title-row">
-      <h3>${escapeHtml(r.name)}</h3>
+      <h2 id="sheetTitle" tabindex="-1">${escapeHtml(r.name)}</h2>
     </div>
     ${starsHtml(r.id)}
     ${genreHtml(r)}
@@ -1591,8 +1630,7 @@ function updateSheetToggleA11y() {
   const grab = document.getElementById('mSheetGrab');
   const states = availableSheetStates();
   const expanded = states.length > 1 && sheetState === states[0];
-  grab.setAttribute('aria-expanded', String(expanded));
-  grab.setAttribute('aria-label', expanded ? 'Pienennä ravintolan tiedot' : 'Laajenna ravintolan tiedot');
+  grab.setAttribute('aria-expanded', String(expanded)); // nimi pysyy vakiona (ei sekä nimen että tilan vaihtoa)
 }
 
 function posFor(state) { return sheetFullH - sheetVisibleH[state]; }
@@ -1666,10 +1704,12 @@ mSheetBody.addEventListener('scroll', updateSheetHeaderState, { passive: true })
 // kertoo sisällön todellisen koon - itse vieritettävä body on aina vähintään
 // paneelin korkuinen, joten sen scrollHeight ei kelpaa mittaamiseen.
 function renderSheetContent(r) {
+  const focusSnap = captureFocus();
   mSheetBody.innerHTML = `<div class="m-sheet-inner">${sheetHtml(r)}</div>`;
   mSheetHeaderTitle.textContent = r.name;
   // Sydän asuu sticky-otsikkokaistalla (rastin vieressä), ei vierivässä sisällössä
   mSheetHeart.innerHTML = heartHtml(r.id);
+  restoreFocus(focusSnap);
 }
 
 function openMobileSheet(id, state) {
@@ -1690,19 +1730,29 @@ function openMobileSheet(id, state) {
   if (!sheetVisible) {
     setSheetPos(sheetFullH, false); // aloitetaan piilosta, jolloin paneeli liukuu sisään
   }
+  if (!sheetVisible) sheetOpenerEl = document.activeElement; // ensimmäinen avaus: muistetaan mistä tultiin
   sheetVisible = true;
   setSelectedMarker(id);
   snapSheet(target);
   updateSheetHeaderState();
+  // Ei-modaalin dialogin avautuminen ilmoitetaan siirtämällä fokus otsikkoon (2.4.3 / 4.1.2);
+  // ilman tätä ruudunlukija ja näppäimistö jäisivät markerille eivätkä tietäisi paneelista.
+  const title = document.getElementById('sheetTitle');
+  if (title) title.focus({ preventScroll: true });
 }
 
 function closeMobileSheet(immediate) {
   if (!sheetVisible) return;
+  const hadFocusInside = mSheet.contains(document.activeElement);
+  const opener = sheetOpenerEl;
+  sheetOpenerEl = null;
   sheetVisible = false;
   sheetRestaurantId = null;
   sheetReturnState = null;
   setSelectedMarker(null);
   updateSheetHeaderState();
+  // Fokus takaisin avaajaan, jos se oli paneelissa (sulkupainike, Esc, kartan napautus)
+  if (hadFocusInside && opener && opener !== document.body && document.body.contains(opener)) opener.focus({ preventScroll: true });
   clearTimeout(sheetHideTimer);
   if (immediate) {
     setSheetPos(sheetFullH, false);
@@ -1819,6 +1869,20 @@ window.addEventListener('mouseup', () => { if (sheetDrag.active && sheetDrag.isM
 
 document.getElementById('mSheetClose').onclick = () => closeMobileSheet();
 
+// 2.4.11 Focus Not Obscured: jos näppäimistöllä fokusoitu kohde on kelluvan alapalkin alla,
+// paneeli laajennetaan, jotta kohde tulee näkyviin (sisältö vierittyy vain full-tilassa).
+mSheet.addEventListener('focusin', (e) => {
+  if (!sheetVisible || sheetState === 'full') return;
+  const t = e.target;
+  if (!mSheetBody.contains(t) || t.id === 'sheetTitle') return;
+  if (!availableSheetStates().includes('full')) return;
+  let keyboard = true;
+  try { keyboard = t.matches(':focus-visible'); } catch (_) {}
+  if (!keyboard) return; // hiiri/kosketus: ei laajenneta (esim. tähden napautus)
+  const navTop = document.querySelector('.bottom-nav').getBoundingClientRect().top;
+  if (t.getBoundingClientRect().bottom > navTop - 4) snapSheet('full');
+});
+
 // Otsikkorivin napautus: kahva, sticky-kaista ja sisällön nimirivi. Sydän, rasti
 // ja linkit hoitavat omat napautuksensa. Vedon jälkeen selain voi lähettää
 // haamuklikkauksen (pieni veto = napautus) -> ohitetaan juuri vedetyn jälkeen.
@@ -1861,6 +1925,60 @@ else if (mobileMQ.addListener) mobileMQ.addListener(onMobileMQChange);
 // kortti ja sen kehys korostetaan. Mobiilissa vastaava on alapaneeli.
 // Valinta (selectedMarkerId) on yhteinen mobiilin kanssa.
 // ===========================================================================
+// ---------------------------------------------------------------------------
+// Saavutettavuus: fokuksen säilytys uudelleenpiirrossa, tilaviestit, markerin fokus
+// ---------------------------------------------------------------------------
+// Listat ja paneeli piirretään uudelleen innerHTML:llä (suosikki, arvio, kartan siirto).
+// Ilman tätä näppäimistöfokus katoaisi (2.4.3): muistetaan aktiivinen kohde
+// (alue + ravintola + data-fk) ja palautetaan fokus uuteen vastaavaan elementtiin.
+function captureFocus() {
+  const a = document.activeElement;
+  if (!a || !a.dataset || !a.dataset.fk) return null;
+  const area = a.closest('#listCards') ? 'listCards' : a.closest('#favCards') ? 'favCards' : a.closest('#mobileSheet') ? 'mobileSheet' : null;
+  if (!area) return null;
+  const card = a.closest('.card[data-restaurant-id]');
+  return { area, fk: a.dataset.fk, id: card ? card.dataset.restaurantId : null };
+}
+function restoreFocus(snap) {
+  if (!snap) return;
+  const root = document.getElementById(snap.area);
+  if (!root) return;
+  let scope = root;
+  if (snap.id) scope = Array.from(root.querySelectorAll('.card[data-restaurant-id]')).find(c => c.dataset.restaurantId === snap.id) || null;
+  const el = scope && Array.from(scope.querySelectorAll('[data-fk]')).find(e => e.dataset.fk === snap.fk);
+  if (el) { el.focus({ preventScroll: true }); return; }
+  // Kohde poistui (esim. suosikki poistettu suosikkilistasta): fokus alueen lähimpään pysyvään painikkeeseen
+  const fallback = { listCards: 'toggleAllLunch', favCards: 'toggleAllLunchFav', mobileSheet: 'mSheetClose' }[snap.area];
+  const fbEl = fallback && document.getElementById(fallback);
+  if (fbEl) fbEl.focus({ preventScroll: true });
+}
+
+// 4.1.3: tilaviestit ruudunlukijalle ilman fokuksen siirtoa
+let announceTimer = null;
+function announce(msg) {
+  const el = document.getElementById('liveStatus');
+  if (!el) return;
+  clearTimeout(announceTimer);
+  el.textContent = '';
+  if (!msg) return;
+  announceTimer = setTimeout(() => { el.textContent = msg; }, 60); // tyhjennys + viive: sama viesti luetaan uudelleen
+}
+
+// 2.4.7 / 2.4.11: näppäimistöllä fokusoitu marker voi olla ruudun ulkopuolella tai
+// paneelin / kelluvan alapalkin alla. Siirretään karttaa niin että marker jää näkyviin.
+function mapBottomObstruction() {
+  if (!isMobileLayout()) return 0;
+  const mapRect = document.getElementById('map').getBoundingClientRect();
+  const navTop = document.querySelector('.bottom-nav').getBoundingClientRect().top;
+  const sheetTop = sheetVisible ? window.innerHeight - sheetVisibleH[sheetState] : window.innerHeight;
+  return Math.max(0, mapRect.bottom - Math.min(navTop, sheetTop));
+}
+function keepFocusedMarkerVisible(marker) {
+  const el = marker._icon;
+  try { if (el && !el.matches(':focus-visible')) return; } catch (_) {}
+  map.panInside(marker.getLatLng(), { paddingTopLeft: [30, 30], paddingBottomRight: [30, mapBottomObstruction() + 24], animate: false });
+}
+
 let revealPendingUntil = 0; // aikaikkuna jossa uudelleenpiirto vierittää valitun kortin uudelleen näkyviin
 
 function findCardEl(containerId, id) {
@@ -1873,7 +1991,9 @@ function findCardEl(containerId, id) {
 // (uudelleenpiirrossa cardHtml lisää luokan itse).
 function applyCardHighlight() {
   document.querySelectorAll('.card[data-restaurant-id]').forEach(c => {
-    c.classList.toggle('card-selected', !!selectedMarkerId && c.dataset.restaurantId === selectedMarkerId);
+    const on = !!selectedMarkerId && c.dataset.restaurantId === selectedMarkerId;
+    c.classList.toggle('card-selected', on);
+    if (on) c.setAttribute('aria-current', 'true'); else c.removeAttribute('aria-current'); // 4.1.2: valinta myös ohjelmallisesti
   });
 }
 
@@ -1984,12 +2104,17 @@ function rebuildMarkers() {
   Object.values(markers).forEach(m => map.removeLayer(m));
   for (const k in markers) delete markers[k];
   restaurants.forEach(r => {
-    const marker = L.marker([r.lat, r.lon]);
+    // alt = ravintolan nimi: Leafletin oletus "Marker" olisi kaikilla sama (4.1.2 / 2.4.6)
+    const marker = L.marker([r.lat, r.lon], { alt: r.name });
     // Ei popupia: mobiilissa avautuu alapaneeli, työpöydällä valitaan ravintola
     // (oranssi marker + kortin korostus sivupalkissa), ks. onMarkerClick.
     marker.on('click', () => onMarkerClick(r.id));
     // Valitun markerin korostus säilyy kun suodatus poistaa/lisää markerin kartalle
     marker.on('add', () => {
+      if (marker._icon && !marker._icon._a11yFocusBound) {
+        marker._icon._a11yFocusBound = true;
+        marker._icon.addEventListener('focus', () => keepFocusedMarkerVisible(marker));
+      }
       if (marker._icon && selectedMarkerId === r.id) {
         marker._icon.classList.add('marker-selected');
         marker.setZIndexOffset(1000);
@@ -2051,12 +2176,18 @@ function applyFiltersToMap() {
   document.getElementById('filterCount').textContent = countText;
   document.getElementById('filterCountSidebar').textContent = countText;
   document.getElementById('openFilterSidebar').classList.toggle('active-filters', count > 0);
+  document.getElementById('openFilterSidebar').setAttribute('aria-label', count > 0 ? `Suodata ravintoloita, ${count} aktiivista suodatinta` : 'Suodata ravintoloita');
   updateFilterApplyButton();
 }
 
+let lastFilterApplyText = null;
 function updateFilterApplyButton() {
   const matchCount = restaurants.filter(matchesFilters).length;
-  document.getElementById('filterApply').textContent = `Näytä tulokset (${matchCount})`;
+  const text = `Näytä tulokset (${matchCount})`;
+  document.getElementById('filterApply').textContent = text;
+  // 4.1.3: suodattimia muutettaessa tulosten määrä ilmoitetaan (vain kun paneeli on auki ja määrä muuttui)
+  if (document.getElementById('filterOverlay').classList.contains('open') && text !== lastFilterApplyText) announce(`${matchCount} ravintolaa vastaa suodattimia`);
+  lastFilterApplyText = text;
 }
 
 // userData tallentaa per-ravintola suosikkitilan JA 1-5 tähden arvostelun.
@@ -2098,7 +2229,12 @@ function getCommunityCount(id) {
   return (r.seedCount || 0) + (r.realRatingCount || 0);
 }
 
-const map = L.map('map', { zoomControl: true }).setView([61.4978, 23.7610], 14);
+const map = L.map('map', { zoomControl: false }).setView([61.4978, 23.7610], 14);
+// 3.1.2 / 2.4.6: Leafletin oletusnimet ("Zoom in") ovat englantia suomenkielisellä sivulla
+L.control.zoom({ zoomInTitle: 'Lähennä karttaa', zoomOutTitle: 'Loitonna karttaa' }).addTo(map);
+map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
+map.getContainer().setAttribute('role', 'region');
+map.getContainer().setAttribute('aria-label', 'Ravintolakartta');
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; OpenStreetMap-tekijät'
@@ -2126,7 +2262,7 @@ function starsHtml(id) {
         <span class="star-empty" aria-hidden="true">★</span>
         <span class="star-fill" aria-hidden="true" style="width:${slotFill}%">★</span>
         <span class="star-hoverlayer" aria-hidden="true">★</span>
-        <button type="button" class="star-btn" aria-label="Anna ${i} tähden arvio" aria-pressed="${own === i}"
+        <button type="button" class="star-btn" data-fk="star-${i}" aria-label="Anna ${i} tähden arvio" aria-pressed="${own === i}"
           onmouseenter="starHoverPreview(event, ${i})"
           onclick="event.stopPropagation(); setRating('${id}', ${i})"></button>
       </span>`;
@@ -2160,7 +2296,7 @@ function starHoverEnd(e) {
 
 function heartHtml(id) {
   const fav = isFav(id);
-  return `<button class="heart" onclick="event.stopPropagation(); toggleFav('${id}')" aria-pressed="${fav}" aria-label="${fav ? 'Poista suosikeista' : 'Lisää suosikiksi'}">${fav ? '♥' : '♡'}</button>`;
+  return `<button class="heart" data-fk="heart" onclick="event.stopPropagation(); toggleFav('${id}')" aria-pressed="${fav}" aria-label="${fav ? 'Poista suosikeista' : 'Lisää suosikiksi'}">${fav ? '♥' : '♡'}</button>`;
 }
 
 // Karkea OSM opening_hours -tulkinta: etsii arkipäivän (ma-pe) aikaisimman
@@ -2331,7 +2467,7 @@ function normalizeUrl(url) {
 
 function websiteLinkHtml(r) {
   if (!r.website) return '';
-  return `<a class="website-link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Verkkosivusto<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
+  return `<a class="website-link" data-fk="link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Verkkosivusto<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
 }
 
 // Ravintolan nimi/tyyppi/osoite tulevat OpenStreetMapista (kuka tahansa voi
@@ -2365,7 +2501,7 @@ function lunchToggleWrapper(summaryText, detailHtml) {
   const expandedClass = allLunchExpanded ? ' expanded' : '';
   const ariaExpanded = allLunchExpanded ? 'true' : 'false';
   return `<div class="lunch-summary${expandedClass}">
-    <button type="button" class="lunch-toggle" aria-expanded="${ariaExpanded}" onclick="event.stopPropagation(); toggleLunchDetail(this)">
+    <button type="button" class="lunch-toggle" data-fk="lunch" aria-expanded="${ariaExpanded}" onclick="event.stopPropagation(); toggleLunchDetail(this)">
       <span class="lunch-toggle-text">${summaryText}</span>
       <svg class="lunch-chevron" viewBox="0 0 24 24" width="12" height="12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6"/>
@@ -2470,13 +2606,16 @@ const ADDR_ICON = '<svg class="pin-icon" viewBox="0 0 24 24" width="11" height="
 
 function genreHtml(r) {
   if (r.cuisineUnknown) return '';
-  return `<span class="genre">${escapeHtml(r.cuisine)}</span>`;
+  // 3.1.2: OSM:n cuisine-arvot ovat englantia (esim. "italian") suomenkielisellä sivulla
+  return `<span class="genre" lang="en">${escapeHtml(r.cuisine)}</span>`;
 }
 
 function toggleFav(id) {
   userData[id] = userData[id] || {};
   userData[id].fav = !userData[id].fav;
   saveUserData();
+  const favName = (restaurants.find(x => x.id === id) || {}).name || 'ravintola';
+  announce(userData[id].fav ? `Lisätty suosikkeihin: ${favName}` : `Poistettu suosikeista: ${favName}`);
   refreshAfterUserAction(id);
 
   if (FIREBASE_ENABLED) {
@@ -2535,6 +2674,8 @@ function setRating(id, val) {
 
   userData[id].rating = newVal;
   saveUserData();
+  const rateName = (restaurants.find(x => x.id === id) || {}).name || 'ravintola';
+  announce(newVal > 0 ? `Arvio tallennettu: ${rateName}, ${newVal} tähteä` : `Arvio poistettu: ${rateName}`);
   refreshAfterUserAction(id);
 }
 window.setRating = setRating;
@@ -2582,15 +2723,15 @@ function updateFavTabLabel() {
   const count = restaurants.filter(r => isFav(r.id)).length;
   document.getElementById('tabFav').textContent = `♥ (${count})`;
   document.getElementById('sbTabFav').textContent = `Suosikit (${count})`;
+  document.getElementById('tabFav').setAttribute('aria-label', `Suosikit (${count})`); // symbolinen "♥ (n)" ei ole kelvollinen nimi
 }
 
 function cardHtml(r) {
   return `
-    <div class="card${selectedMarkerId === r.id ? ' card-selected' : ''}" data-restaurant-id="${escapeHtml(r.id)}" role="button" tabindex="0" aria-label="Näytä ${escapeHtml(r.name)} kartalla"
-      onclick="focusOnMap('${r.id}')"
-      onkeydown="if(event.target===event.currentTarget && (event.key==='Enter'||event.key===' ')){event.preventDefault(); focusOnMap('${r.id}');}">
+    <article class="card${selectedMarkerId === r.id ? ' card-selected' : ''}" data-restaurant-id="${escapeHtml(r.id)}"${selectedMarkerId === r.id ? ' aria-current="true"' : ''}
+      onclick="focusOnMap('${r.id}')">
       <div class="card-top">
-        <h3>${escapeHtml(r.name)}</h3>
+        <h3><button type="button" class="card-title-btn" data-fk="title" onclick="event.stopPropagation(); focusOnMap('${r.id}')">${escapeHtml(r.name)}<span class="visually-hidden"> – näytä kartalla</span></button></h3>
         ${heartHtml(r.id)}
       </div>
       ${genreHtml(r)}
@@ -2601,7 +2742,7 @@ function cardHtml(r) {
       <div class="card-actions">
         ${starsHtml(r.id)}
       </div>
-    </div>
+    </article>
   `;
 }
 
@@ -2634,6 +2775,7 @@ function cardGroupsHtml(list) {
 }
 
 function renderList() {
+  const focusSnap = captureFocus();
   const el = document.getElementById('listCards');
   const list = currentListRestaurants();
   const emptyHint = nameQuery.length >= 2
@@ -2642,15 +2784,18 @@ function renderList() {
   el.innerHTML = list.length ? cardGroupsHtml(list) : `<p class="empty-hint">${emptyHint}</p>`;
   updateHeaderInfo();
   if (performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
+  restoreFocus(focusSnap);
 }
 
 function renderFavorites() {
+  const focusSnap = captureFocus();
   const el = document.getElementById('favCards');
   const favs = restaurants
     .filter(r => isFav(r.id))
     .sort((a, b) => getRating(b.id) - getRating(a.id) || a.name.localeCompare(b.name, 'fi'));
   el.innerHTML = favs.length ? cardGroupsHtml(favs) : '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
   if (performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
+  restoreFocus(focusSnap);
 }
 
 function focusOnMap(id) {
@@ -2684,9 +2829,10 @@ function showTab(which) {
   document.getElementById('tabMap').classList.toggle('active', which === 'map');
   document.getElementById('tabList').classList.toggle('active', which === 'list');
   document.getElementById('tabFav').classList.toggle('active', which === 'fav');
-  document.getElementById('tabMap').setAttribute('aria-selected', which === 'map');
-  document.getElementById('tabList').setAttribute('aria-selected', which === 'list');
-  document.getElementById('tabFav').setAttribute('aria-selected', which === 'fav');
+  [['tabMap', 'map'], ['tabList', 'list'], ['tabFav', 'fav']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (which === key) el.setAttribute('aria-current', 'true'); else el.removeAttribute('aria-current');
+  });
   document.getElementById('map').classList.toggle('m-active', which === 'map');
   document.getElementById('listView').classList.toggle('m-active', which === 'list');
   document.getElementById('favView').classList.toggle('m-active', which === 'fav');
@@ -2707,6 +2853,8 @@ function showSidebarTab(which) {
   document.getElementById('sbTabFav').classList.toggle('active', which === 'fav');
   document.getElementById('sbTabList').setAttribute('aria-selected', which === 'list');
   document.getElementById('sbTabFav').setAttribute('aria-selected', which === 'fav');
+  document.getElementById('sbTabList').tabIndex = which === 'list' ? 0 : -1; // roving tabindex
+  document.getElementById('sbTabFav').tabIndex = which === 'fav' ? 0 : -1;
   document.getElementById('listView').classList.toggle('d-active', which === 'list');
   document.getElementById('favView').classList.toggle('d-active', which === 'fav');
   if (which === 'list') renderList();
@@ -2714,14 +2862,27 @@ function showSidebarTab(which) {
 }
 document.getElementById('sbTabList').onclick = () => showSidebarTab('list');
 document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
+// Tab-mallin näppäimistötuki: nuolet, Home ja End siirtävät ja aktivoivat välilehden
+document.getElementById('sidebarTabs').addEventListener('keydown', (e) => {
+  const tabs = [document.getElementById('sbTabList'), document.getElementById('sbTabFav')];
+  let i = tabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  if (e.key === 'ArrowRight') i = (i + 1) % tabs.length;
+  else if (e.key === 'ArrowLeft') i = (i - 1 + tabs.length) % tabs.length;
+  else if (e.key === 'Home') i = 0;
+  else if (e.key === 'End') i = tabs.length - 1;
+  else return;
+  e.preventDefault();
+  tabs[i].focus();
+  showSidebarTab(i === 0 ? 'list' : 'fav');
+});
 
 function applySidebarWideVisuals() {
   const sidebar = document.getElementById('sidebar');
   const btn = document.getElementById('sidebarCollapseBtn');
   if (sidebar) sidebar.classList.toggle('wide', sidebarWide);
   if (btn) {
-    btn.setAttribute('aria-expanded', String(sidebarWide));
-    btn.setAttribute('aria-label', sidebarWide ? 'Pienennä näkymä' : 'Laajenna näkymä');
+    btn.setAttribute('aria-expanded', String(sidebarWide)); // nimi pysyy vakiona ("Laajenna sivupalkki")
   }
 }
 // Asetetaan näytön leveyden mukainen oletustila heti, ennen ensimmäistä
@@ -2757,6 +2918,8 @@ nameSearchInput.addEventListener('input', (e) => {
     applyFiltersToMap();
     renderList();
     renderFavorites();
+    // 4.1.3: hakutulosten määrä ilmoitetaan (muuten ruudunlukija ei tiedä että lista päivittyi)
+    if (nameQuery.length >= 2) announce(`${currentListRestaurants().length} hakutulosta`);
   }, 100);
 });
 
