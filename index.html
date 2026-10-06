@@ -2005,6 +2005,49 @@ function flashCard(card) {
   card.addEventListener('animationend', () => card.classList.remove('card-flash'), { once: true });
 }
 
+// Oma vierityssanimaatio natiivin smooth scrollin tilalle: selain päättää natiivin
+// keston itse (vaihtelee selaimittain ja matkan mukaan), tämä on aina SCROLL_ANIM_MS.
+const SCROLL_ANIM_MS = 250;
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+const scrollAnims = new WeakMap(); // vieritettävä säiliö -> käynnissä oleva animaatio
+
+function cancelScrollAnim(container) {
+  const a = scrollAnims.get(container);
+  if (!a) return;
+  cancelAnimationFrame(a.raf);
+  a.cleanup();
+  scrollAnims.delete(container);
+}
+
+function animateScrollTop(container, target, duration = SCROLL_ANIM_MS) {
+  cancelScrollAnim(container); // uusi vieritys korvaa edellisen (ei kilpailevia animaatioita)
+  const max = Math.max(0, container.scrollHeight - container.clientHeight);
+  const to = Math.max(0, Math.min(max, target));
+  const from = container.scrollTop;
+  const dist = to - from;
+  if (Math.abs(dist) < 1) return;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced || duration <= 0) { container.scrollTop = to; return; } // "vähennä liikettä": välitön
+
+  const anim = { raf: 0, cleanup: null };
+  // Käyttäjän oma vieritys/näppäin/kosketus keskeyttää animaation heti (ei taistella käyttäjää vastaan)
+  const stop = () => cancelScrollAnim(container);
+  const events = ['wheel', 'touchstart', 'mousedown', 'keydown'];
+  events.forEach(ev => container.addEventListener(ev, stop, { passive: true }));
+  anim.cleanup = () => events.forEach(ev => container.removeEventListener(ev, stop));
+  scrollAnims.set(container, anim);
+
+  let start = null;
+  const step = (now) => {
+    if (start === null) start = now; // ensimmäinen ruutu = t 0 (rAF:n aikaleima, ei performance.now)
+    const t = Math.min(1, (now - start) / duration);
+    container.scrollTop = from + dist * easeOutCubic(t);
+    if (t < 1) anim.raf = requestAnimationFrame(step);
+    else { anim.cleanup(); scrollAnims.delete(container); }
+  };
+  anim.raf = requestAnimationFrame(step);
+}
+
 // Vierittää kortin näkyviin vain jos se ei jo ole kokonaan näkyvissä; sticky-
 // työkalurivin alle jäävä osa lasketaan näkymättömäksi. Keskittää kortin
 // näkyvään alueeseen (tai asettaa kortin yläreunan alueen alkuun jos kortti on
@@ -2024,10 +2067,49 @@ function scrollCardIntoView(card, container, flash) {
     const desired = r.height > visibleH
       ? cardTopInContent - (tbH + margin)
       : cardTopInContent + r.height / 2 - (tbH + margin) - visibleH / 2;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    container.scrollTo({ top: Math.max(0, desired), behavior: reduced ? 'auto' : 'smooth' });
+    animateScrollTop(container, Math.max(0, desired));
   }
   if (flash) flashCard(card);
+}
+
+// ---------------------------------------------------------------------------
+// Valitun kortin ankkurointi: kun kartan siirto (moveend/zoomend) piirtää "Kartalla
+// näkyvät" -listan uudelleen, valittu kortti pidetään täsmälleen samassa kohdassa ruudulla.
+// Ennen piirtoa mitataan kortin etäisyys säiliön yläreunasta, piirron jälkeen scrollTop
+// säädetään niin, että kortti on taas samassa kohdassa. Sama JS-tehtävä, joten selain ei
+// ehdi piirtää väliin (ei välähdystä). Vain kun kortti on näkyvissä ja vain kartan siirron
+// aiheuttamassa piirrossa (ei hausta tms., jossa listan alun pitää näkyä).
+// Rajoitus: scrollTop ei voi mennä alle 0 tai yli maksimin, joten jos kortti siirtyy
+// listan alkuun ilman tilaa yläpuolella, se liikkuu vain sen verran kuin on pakko.
+// ---------------------------------------------------------------------------
+let anchorSelectedOnNextRender = false;
+
+function isCardVisibleInView(card, container) {
+  const toolbar = container.querySelector('.list-toolbar, .fav-toolbar');
+  const cRect = container.getBoundingClientRect();
+  const r = card.getBoundingClientRect();
+  const topEdge = cRect.top + (toolbar ? toolbar.offsetHeight : 0);
+  return r.bottom > topEdge && r.top < cRect.bottom; // osakin näkyvissä riittää
+}
+
+function captureSelectedAnchor(viewId, cardsId) {
+  if (!anchorSelectedOnNextRender || !selectedMarkerId) return null;
+  const container = document.getElementById(viewId);
+  const card = findCardEl(cardsId, selectedMarkerId);
+  if (!card || !isCardVisibleInView(card, container)) return null;
+  return { id: selectedMarkerId, offset: card.getBoundingClientRect().top - container.getBoundingClientRect().top };
+}
+
+// Palauttaa true jos kortti löytyi uudesta listasta ja on ankkuroinnin jälkeen näkyvissä
+function applySelectedAnchor(anchor, viewId, cardsId) {
+  if (!anchor) return false;
+  const container = document.getElementById(viewId);
+  const card = findCardEl(cardsId, anchor.id);
+  if (!card) return false;
+  cancelScrollAnim(container); // käynnissä oleva vierityssanimaatio ei saa vetää korttia pois paikaltaan
+  const delta = (card.getBoundingClientRect().top - container.getBoundingClientRect().top) - anchor.offset;
+  if (Math.abs(delta) >= 0.5) container.scrollTop += delta;
+  return isCardVisibleInView(card, container);
 }
 
 function activeSidebarViewIds() {
@@ -2776,6 +2858,7 @@ function cardGroupsHtml(list) {
 
 function renderList() {
   const focusSnap = captureFocus();
+  const anchor = captureSelectedAnchor('listView', 'listCards');
   const el = document.getElementById('listCards');
   const list = currentListRestaurants();
   const emptyHint = nameQuery.length >= 2
@@ -2783,7 +2866,9 @@ function renderList() {
     : 'Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.';
   el.innerHTML = list.length ? cardGroupsHtml(list) : `<p class="empty-hint">${emptyHint}</p>`;
   updateHeaderInfo();
-  if (performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
+  // Ankkurointi ensin: jos valittu kortti saatiin pysymään paikallaan, ei tarvita keskittävää vieritystä.
+  const anchored = applySelectedAnchor(anchor, 'listView', 'listCards');
+  if (!anchored && performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
   restoreFocus(focusSnap);
 }
 
@@ -2796,6 +2881,25 @@ function renderFavorites() {
   el.innerHTML = favs.length ? cardGroupsHtml(favs) : '<p class="empty-hint">Ei vielä suosikkeja. Lisää sydämestä kartalla tai listassa.</p>';
   if (performance.now() < revealPendingUntil) scrollSelectedCardIntoView(false);
   restoreFocus(focusSnap);
+}
+
+// Työpöytä + "Kartalla näkyvät" -lista: kun ravintola valitaan listasta ja sen marker on jo
+// kartalla riittävän kaukana reunoista (10 % marginaali joka sivulta), karttaa ei siirretä.
+// Silloin rajaus ei muutu, "Kartalla näkyvät" -lista ei piirry uudelleen eikä valittu kortti
+// pompi toiseen kohtaan. Marker vain korostetaan. (Muissa tapauksissa kartta keskitetään kuten ennen.)
+const NO_RECENTER_MARGIN = 0.10;
+function markerComfortablyInView(r) {
+  const size = map.getSize();
+  const p = map.latLngToContainerPoint([r.lat, r.lon]);
+  const mx = size.x * NO_RECENTER_MARGIN;
+  const my = size.y * NO_RECENTER_MARGIN;
+  return p.x >= mx && p.x <= size.x - mx && p.y >= my && p.y <= size.y - my;
+}
+function shouldRecenterMapForCard(r) {
+  const listTabActive = document.getElementById('listView').classList.contains('d-active');
+  // Suosikit-välilehdeltä ja "Kaikki ravintolat" -tilasta valittaessa keskitys säilyy (lista ei piirry kartan mukana)
+  if (listFilterMode === 'visible' && listTabActive && markerComfortablyInView(r)) return false;
+  return true;
 }
 
 function focusOnMap(id) {
@@ -2811,7 +2915,7 @@ function focusOnMap(id) {
       map.setView([r.lat, r.lon], 16, { animate: false });
       openMobileSheet(id, 'half');
     } else {
-      map.setView([r.lat, r.lon], 16);
+      if (shouldRecenterMapForCard(r)) map.setView([r.lat, r.lon], 16);
       selectRestaurantDesktop(id); // oranssi marker + kortin korostus (ei popupia)
     }
   }, 60);
@@ -2819,8 +2923,11 @@ function focusOnMap(id) {
 window.focusOnMap = focusOnMap;
 
 map.on('moveend zoomend', () => {
-  if (listFilterMode === 'visible') renderList();
-  else updateHeaderInfo();
+  if (listFilterMode === 'visible') {
+    // Kartan siirto vaihtaa listan sisällön: valittu kortti pidetään paikallaan (ks. captureSelectedAnchor)
+    anchorSelectedOnNextRender = true;
+    try { renderList(); } finally { anchorSelectedOnNextRender = false; }
+  } else updateHeaderInfo();
 });
 
 function showTab(which) {
