@@ -1,17 +1,25 @@
 /**
- * Tampereen Lounas — Cloud Functions (2nd gen, Node.js)
+ * Lounas — Cloud Functions (2nd gen, Node.js 22)
  *
- * Kaksi funktiota:
- *  1. onRatingWrite   — päivittää restaurants/{id}:n ratingSum/ratingCount
- *                       AINA kun joku kirjoittaa/muuttaa/poistaa oman arvionsa.
- *                       Asiakas ei koskaan itse laske eikä kirjoita aggregaattia.
- *  2. syncRestaurants — ajastettu (kerran vuorokaudessa), hakee Overpassista
- *                       Tampereen ravintolat ja kirjoittaa/päivittää ne
- *                       restaurants-kokoelmaan. Vain TÄMÄ funktio saa koskea
- *                       Overpassia — ei yksikään käyttäjän selain.
+ * Alueet (kaupungit): Tampere ja Helsinki. Kullakin alueella on OMAT Firestore-kokoelmat
+ * ja omat funktiot (ks. REGIONS alempana), joten yhden alueen data tai virhe ei voi
+ * vaikuttaa toiseen. Tampere on alkuperäinen ja ennallaan; uudet alueet vain lisätään.
+ *
+ * Funktiot alueittain (Tampere / Helsinki):
+ *  1. onRatingWrite       / onRatingWriteHelsinki
+ *       päivittää ravintolan realRatingSum/realRatingCount AINA kun joku
+ *       kirjoittaa/muuttaa/poistaa oman arvionsa. Asiakas ei koskaan itse laske
+ *       eikä kirjoita aggregaattia.
+ *  2. syncRestaurants     / syncRestaurantsHelsinki   (+ ...Manual)
+ *       ajastettu (kerran vuorokaudessa): hakee Overpassista alueen ravintolat ja
+ *       kirjoittaa/päivittää ne alueen restaurants-kokoelmaan. Vain NÄMÄ funktiot
+ *       saavat koskea Overpassia - ei yksikään käyttäjän selain.
+ *  3. syncDailyMenus      / syncDailyMenusHelsinki    (+ ...Manual)
+ *       ajastettu: hakee alueen lounaslähteiden (menuSources) päivän listat,
+ *       jäsentää ne alustakohtaisilla parsereilla ja siivoaa vanhat.
  *
  * Asenna riippuvuudet functions-kansiossa:
- *   npm install firebase-functions firebase-admin
+ *   npm install
  *
  * Deploy:
  *   firebase deploy --only functions
@@ -36,6 +44,43 @@ function sanitizeId(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Alueasetukset (kaupungit)
+// ---------------------------------------------------------------------------
+//
+// Jokaisella alueella on OMAT Firestore-kokoelmansa, joten yhden alueen data tai
+// virhe ei voi koskaan vaikuttaa toiseen. TAMPERE on alkuperäinen ja pysyy täsmälleen
+// ennallaan (samat kokoelmat ja funktiot kuin ennen alueasetusta) - uudet alueet vain
+// LISÄTÄÄN: omat kokoelmat, omat funktiot ja omat tietoturvasäännöt.
+//
+//  - bbox:         Overpass-haun rajaus "etelä,länsi,pohjoinen,itä"
+//  - seedRatings:  true = uusille ravintoloille annetaan uskottava keksitty lähtöarvio
+//                  (Tampere, ks. seedRatingFor). false = ei keksittyjä arvioita:
+//                  seedSum/seedCount kirjoitetaan nollina, jolloin asiakas näyttää
+//                  "Ei arvioita vielä" kunnes oikeita arvioita tulee.
+const TAMPERE_BBOX = "61.435,23.640,61.560,23.900";
+// Helsingin keskusta: ydinkeskusta + Ruoholahti (mitattu Overpassilla: 905 ravintolaa)
+const HELSINKI_BBOX = "60.155,24.905,60.182,24.970";
+
+const REGIONS = {
+  tampere: {
+    id: "tampere",
+    bbox: TAMPERE_BBOX,
+    restaurants: "restaurants",
+    dailyMenus: "dailyMenus",
+    menuSources: "menuSources",
+    seedRatings: true,
+  },
+  helsinki: {
+    id: "helsinki",
+    bbox: HELSINKI_BBOX,
+    restaurants: "restaurants_helsinki",
+    dailyMenus: "dailyMenus_helsinki",
+    menuSources: "menuSources_helsinki",
+    seedRatings: false,
+  },
+};
+
+// ---------------------------------------------------------------------------
 // 1. Arvion aggregointi
 // ---------------------------------------------------------------------------
 //
@@ -43,9 +88,9 @@ function sanitizeId(id) {
 // (luonti, päivitys, poisto). Laskee ratingSum/ratingCount UUDELLEEN transaktiona
 // vertaamalla ennen- ja jälkeen-tilaa — ei kumulatiivista +/- laskentaa, koska
 // se ajautuisi helposti pieleen jos kaksi kirjoitusta osuu samaan hetkeen.
-exports.onRatingWrite = onDocumentWritten(
-  "restaurants/{restaurantId}/ratings/{userId}",
-  async (event) => {
+// Tehdas: sama aggregointilogiikka jokaiselle alueelle, kukin omaan kokoelmaansa.
+function makeRatingHandler(region, name) {
+  return async (event) => {
     const restaurantId = event.params.restaurantId;
     const beforeSnap = event.data.before;
     const afterSnap = event.data.after;
@@ -56,12 +101,12 @@ exports.onRatingWrite = onDocumentWritten(
     // Ei mitään muutosta arvoon (esim. muu kentän päivitys) -> ei tarvitse tehdä mitään.
     if (beforeRating === afterRating) return;
 
-    const restaurantRef = db.collection("restaurants").doc(restaurantId);
+    const restaurantRef = db.collection(region.restaurants).doc(restaurantId);
 
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(restaurantRef);
       if (!snap.exists) {
-        logger.warn(`onRatingWrite: ravintolaa ${restaurantId} ei löytynyt, ohitetaan`);
+        logger.warn(`${name}: ravintolaa ${restaurantId} ei löytynyt, ohitetaan`);
         return;
       }
       const data = snap.data();
@@ -88,7 +133,16 @@ exports.onRatingWrite = onDocumentWritten(
 
       tx.update(restaurantRef, { realRatingSum: sum, realRatingCount: count });
     });
-  }
+  };
+}
+
+exports.onRatingWrite = onDocumentWritten(
+  "restaurants/{restaurantId}/ratings/{userId}",
+  makeRatingHandler(REGIONS.tampere, "onRatingWrite")
+);
+exports.onRatingWriteHelsinki = onDocumentWritten(
+  "restaurants_helsinki/{restaurantId}/ratings/{userId}",
+  makeRatingHandler(REGIONS.helsinki, "onRatingWriteHelsinki")
 );
 
 // ---------------------------------------------------------------------------
@@ -100,7 +154,7 @@ exports.onRatingWrite = onDocumentWritten(
 // restaurants-kokoelmaan. Käyttää batch-kirjoitusta (max 500/erä).
 // Uusi ravintola: luodaan ratingSum=0, ratingCount=0. Olemassa oleva:
 // päivitetään vain OSM:stä tulevat kentät, EI kosketa ratingSum/ratingCount.
-const TAMPERE_BBOX = "61.435,23.640,61.560,23.900";
+// (TAMPERE_BBOX ja HELSINKI_BBOX on määritelty alueasetuksessa ylhäällä.)
 // Useampi julkinen Overpass-peili varalla. Pilvipalveluiden (Google Cloud,
 // AWS, jne.) lähtevät IP-osoitteet ovat usein yhteisiä monelle asiakkaalle,
 // joten yksi rajapinta voi hylätä pyynnön (429/5xx) vaikka itse et tekisi
@@ -178,7 +232,15 @@ function elementToRestaurant(el) {
 exports.syncRestaurants = onSchedule(
   { schedule: "0 4 * * *", timeZone: "Europe/Helsinki", timeoutSeconds: 300 },
   async () => {
-    await runSyncRestaurants();
+    await runSyncRestaurants(REGIONS.tampere);
+  }
+);
+// Helsinki: oma funktio ja eri kellonaika (ei samaa aikaa Tampereen kanssa, jotta Overpass-pyynnöt
+// eivät mene päällekkäin ja Helsingin virhe tai hitaus ei kaada Tampereen synkkaa).
+exports.syncRestaurantsHelsinki = onSchedule(
+  { schedule: "15 4 * * *", timeZone: "Europe/Helsinki", timeoutSeconds: 300 },
+  async () => {
+    await runSyncRestaurants(REGIONS.helsinki);
   }
 );
 
@@ -200,16 +262,16 @@ function seedRatingFor(id) {
   return { sum: Math.round(avgSeed * count), count };
 }
 
-async function runSyncRestaurants() {
-  logger.info("syncRestaurants: haetaan Overpassista...");
+async function runSyncRestaurants(region) {
+  logger.info(`syncRestaurants[${region.id}]: haetaan Overpassista...`);
 
-  const data = await fetchFromOverpass(buildOverpassQuery(TAMPERE_BBOX));
+  const data = await fetchFromOverpass(buildOverpassQuery(region.bbox));
 
   const restaurants = data.elements
     .map(elementToRestaurant)
     .filter((r) => r.lat && r.lon);
 
-  logger.info(`syncRestaurants: ${restaurants.length} ravintolaa löytyi, kirjoitetaan...`);
+  logger.info(`syncRestaurants[${region.id}]: ${restaurants.length} ravintolaa löytyi, kirjoitetaan...`);
 
   // Selvitetään mitkä ravintolat TARVITSEVAT vielä siemenen - eli joilta
   // puuttuu seedCount-kenttä kokonaan. Tämä (ei pelkkä "onko dokumentti
@@ -218,7 +280,7 @@ async function runSyncRestaurants() {
   // edellinen kokoelman poisto olisi vielä kesken ajon alkaessa - ei väliä,
   // puuttuva kenttä täyttyy joka tapauksessa seuraavalla ajolla eikä oikeaan
   // realRatingSum/realRatingCount-dataan koskaan kosketa.
-  const existingSnap = await db.collection("restaurants").select("seedCount").get();
+  const existingSnap = await db.collection(region.restaurants).select("seedCount").get();
   const idsWithSeed = new Set(
     existingSnap.docs.filter((d) => d.get("seedCount") !== undefined).map((d) => d.id)
   );
@@ -233,26 +295,30 @@ async function runSyncRestaurants() {
       const payload = { ...r };
       if (!idsWithSeed.has(docId)) {
         // Siemen puuttuu -> annetaan se nyt, ei enää koskaan tämän jälkeen.
-        const seed = seedRatingFor(r.id);
+        // Alueilla ilman keksittyjä arvioita (seedRatings=false) kirjoitetaan nollat: kenttä on silti
+        // olemassa, joten asiakas ja tämä logiikka toimivat täsmälleen samoin kuin Tampereella.
+        const seed = region.seedRatings ? seedRatingFor(r.id) : { sum: 0, count: 0 };
         payload.seedSum = seed.sum;
         payload.seedCount = seed.count;
       }
       // merge:true -> jos siemen on jo olemassa, seedSum/seedCount EIVÄT ole
       // payloadissa lainkaan (ks. yllä), joten merge jättää ne koskemattomiksi.
-      batch.set(db.collection("restaurants").doc(docId), payload, { merge: true });
+      batch.set(db.collection(region.restaurants).doc(docId), payload, { merge: true });
     }
     await batch.commit();
-    logger.info(`syncRestaurants: kirjoitettu ${i + chunk.length}/${restaurants.length}`);
+    logger.info(`syncRestaurants[${region.id}]: kirjoitettu ${i + chunk.length}/${restaurants.length}`);
   }
 
-  logger.info("syncRestaurants: valmis.");
+  logger.info(`syncRestaurants[${region.id}]: valmis.`);
   return restaurants.length;
 }
 
 // Manuaalinen laukaisin PoC/kehitysvaihetta varten - sama SYNC_SECRET-suojaus
 // kuin syncDailyMenusManual. Kutsu esim:
 // https://<alue>-<projekti>.cloudfunctions.net/syncRestaurantsManual?secret=...
-exports.syncRestaurantsManual = onRequest({ timeoutSeconds: 300 }, async (req, res) => {
+// Yhteinen käsittelijä kaikille manuaalilaukaisimille (SYNC_SECRET-suojaus, virheilmoitukset).
+// run() palauttaa vastaukseen yhdistettävät kentät (ok: true lisätään automaattisesti).
+async function handleManualSync(req, res, name, run) {
   const expected = (process.env.SYNC_SECRET || "").trim();
   if (!expected) {
     res.status(500).send("SYNC_SECRET-ympäristömuuttujaa ei ole asetettu palvelimella.");
@@ -260,6 +326,8 @@ exports.syncRestaurantsManual = onRequest({ timeoutSeconds: 300 }, async (req, r
   }
   const given = (req.query.secret || "").toString();
   if (given !== expected) {
+    // Ei koskaan paljasteta itse arvoja, vain pituudet - auttaa löytämään
+    // näkymättömät välilyönnit/rivinvaihdot jotka aiheuttavat epäsuoran eron.
     res.status(403).send(
       `Väärä tai puuttuva secret-parametri. (annetun pituus: ${given.length}, ` +
       `palvelimen arvon pituus: ${expected.length})`
@@ -267,13 +335,23 @@ exports.syncRestaurantsManual = onRequest({ timeoutSeconds: 300 }, async (req, r
     return;
   }
   try {
-    const count = await runSyncRestaurants();
-    res.status(200).json({ ok: true, count });
+    const payload = await run();
+    res.status(200).json({ ok: true, ...payload });
   } catch (err) {
-    logger.error("syncRestaurantsManual epäonnistui:", err);
+    logger.error(`${name} epäonnistui:`, err);
     res.status(500).json({ ok: false, error: String(err) });
   }
-});
+}
+
+// Manuaalinen laukaisin PoC/kehitysvaihetta varten - sama SYNC_SECRET-suojaus
+// kuin syncDailyMenusManual. Kutsu esim:
+// https://<alue>-<projekti>.cloudfunctions.net/syncRestaurantsManual?secret=...
+exports.syncRestaurantsManual = onRequest({ timeoutSeconds: 300 }, (req, res) =>
+  handleManualSync(req, res, "syncRestaurantsManual", async () => ({ count: await runSyncRestaurants(REGIONS.tampere) }))
+);
+exports.syncRestaurantsHelsinkiManual = onRequest({ timeoutSeconds: 300 }, (req, res) =>
+  handleManualSync(req, res, "syncRestaurantsHelsinkiManual", async () => ({ count: await runSyncRestaurants(REGIONS.helsinki) }))
+);
 
 // ---------------------------------------------------------------------------
 // 3. Lounaslistojen haku ja jäsennys — Poweresta-alusta
@@ -419,9 +497,9 @@ function parsePowerestaPdfText(pdfText, dateIso) {
  * HTML-sivua, ks. yllä oleva selitys), kirjoittaa tuloksen
  * dailyMenus/{restaurantId}_{päivämäärä} -dokumenttiin.
  */
-async function syncOnePowerestaMenu(restaurantId, sourceData) {
+async function syncOnePowerestaMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const pdfUrlPattern = sourceData.pdfUrlPattern;
   if (!pdfUrlPattern) {
@@ -546,7 +624,7 @@ function parseLinkosuoHtml(html) {
   return days;
 }
 
-async function syncOneLinkosuoMenu(restaurantId, sourceData) {
+async function syncOneLinkosuoMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -573,7 +651,7 @@ async function syncOneLinkosuoMenu(restaurantId, sourceData) {
   const dateKeys = Object.keys(days);
   if (dateKeys.length === 0) {
     const today = new Date().toISOString().slice(0, 10);
-    await db.collection("dailyMenus").doc(`${restaurantId}_${today}`).set({
+    await db.collection(region.dailyMenus).doc(`${restaurantId}_${today}`).set({
       restaurantId,
       date: today,
       parseStatus: "failed",
@@ -587,7 +665,7 @@ async function syncOneLinkosuoMenu(restaurantId, sourceData) {
   const batch = db.batch();
   for (const dateIso of dateKeys) {
     const day = days[dateIso];
-    const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+    const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
     batch.set(ref, {
       restaurantId,
       date: dateIso,
@@ -613,10 +691,10 @@ async function syncOneLinkosuoMenu(restaurantId, sourceData) {
 // filosofia kuin Linkosuolla: raaka mutta oikea on parempi kuin siisti mutta
 // väärä). EI yritä poimia hintoja rakenteisena, koska sivukohtaista hintojen
 // sijaintia ei tunneta - kaikki menee yhtenä tekstilohkona.
-async function syncOneGenericMenu(restaurantId, sourceData) {
+async function syncOneGenericMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -722,10 +800,10 @@ async function syncOneGenericMenu(restaurantId, sourceData) {
 // hinnat per annos, ei yhtä kokonaishintaa) ei vastaa sitä mallia lainkaan.
 // Tallennetaan siistitty mutta muuten sellaisenaan oleva teksti, parseStatus
 // "partial" - sama toimiva periaate kuin Linkosuolla.
-async function syncOneQuatreSaisonsMenu(restaurantId, sourceData) {
+async function syncOneQuatreSaisonsMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -790,10 +868,10 @@ async function syncOneQuatreSaisonsMenu(restaurantId, sourceData) {
 // on aina tämän päivän menu - ei tarvitse hauraita päivämäärävertailuja.
 // Jokainen otsikko/nimi toistuu HTML:ssä kahdesti (reagoivan typografian
 // duplikaattikomponentit), joten käytetään aina .first()-valintaa.
-async function syncOneRaflaamoMenu(restaurantId, sourceData) {
+async function syncOneRaflaamoMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -891,10 +969,10 @@ async function syncOneRaflaamoMenu(restaurantId, sourceData) {
 // "bundlet" (useampi ruokalaji yhdessä, esim. "Lihapullia, kastiketta ja
 // puolukkaa") ovat siinä JO valmiiksi yhdistetty luonnolliseksi lauseeksi -
 // ei tarvitse arvata mitkä ruoat kuuluvat yhteen.
-async function syncOneCompassGroupMenu(restaurantId, sourceData) {
+async function syncOneCompassGroupMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -1026,10 +1104,10 @@ async function syncOneCompassGroupMenu(restaurantId, sourceData) {
 // (ensimmäinen otsikko+tekstieditori-pari) ja hinnat ("Hinta"-otsikon alta),
 // ohitetaan "Allergiamerkinnät"-osio koska se on sama joka päivä (ei
 // päiväkohtaista tietoa).
-async function syncOneElementorTabsMenu(restaurantId, sourceData) {
+async function syncOneElementorTabsMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -1146,10 +1224,10 @@ async function syncOneElementorTabsMenu(restaurantId, sourceData) {
 // rakenteessa. HUOM sivun teksti sisältää näkymättömiä pehmeitä
 // tavutusmerkkejä (U+00AD) sanojen sisällä - ne pitää siivota pois ennen
 // viikonpäivien tunnistusta, muuten "Maa­nan­tai" ei täsmää "Maanantai"in.
-async function syncOneElementorFlatListMenu(restaurantId, sourceData) {
+async function syncOneElementorFlatListMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -1257,10 +1335,10 @@ async function syncOneElementorFlatListMenu(restaurantId, sourceData) {
 // käyttävät samaa ".option-title" (nimi + valinnainen hinta) + seuraava
 // "ul.accordion__list" (ruokalajit, joissa nimi + allergeenimerkinnät)
 // -rakennetta, joten sama silmukka käsittelee molemmat kerralla.
-async function syncOneAntellMenu(restaurantId, sourceData) {
+async function syncOneAntellMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -1354,11 +1432,11 @@ async function syncOneAntellMenu(restaurantId, sourceData) {
 // rinnakkaista listaa (esim. "Henkilöstölounas", "Lounas", "Yläkuppila").
 // JSON sisältää AINA kaikki menuTypet riippumatta mt-parametrista, joten
 // suodatus tehdään meidän puolellamme vastauksen saavuttua.
-async function syncOneJamixMenu(restaurantId, sourceData) {
+async function syncOneJamixMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const url = sourceData.url;
   const dateIso = new Date().toISOString().slice(0, 10);
   const dateCompact = parseInt(dateIso.replace(/-/g, ""), 10); // esim. 20261001
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   let targetMenuTypeId = null;
   try {
@@ -1476,10 +1554,10 @@ async function syncOneJamixMenu(restaurantId, sourceData) {
 // päädyttiin PDF:ään HTML:n sijaan). Ei vielä nähty oikeaa pdf-parse:n
 // tuottamaa raakatekstiä tältä alustalta, joten tämä on ensimmäinen,
 // yleispätevä versio - tarkennetaan kun nähdään oikea tulos.
-async function syncOneSodexoMenu(restaurantId, sourceData) {
+async function syncOneSodexoMenu(restaurantId, sourceData, region = REGIONS.tampere) {
   const { pdfUrlPattern } = sourceData;
   const dateIso = new Date().toISOString().slice(0, 10);
-  const ref = db.collection("dailyMenus").doc(`${restaurantId}_${dateIso}`);
+  const ref = db.collection(region.dailyMenus).doc(`${restaurantId}_${dateIso}`);
 
   if (!pdfUrlPattern) {
     await ref.set({
@@ -1575,13 +1653,13 @@ const PLATFORM_HANDLERS = {
 // näkyville - sovellus hakee aina vain tämän päivän dataa
 // (loadDailyMenusFromFirestore: where('date', '==', today)). Siivotaan ne
 // pois joka yö ettei kokoelma kasva loputtomiin turhaan.
-async function cleanupOldDailyMenus() {
+async function cleanupOldDailyMenus(region) {
   const todayIso = new Date().toISOString().slice(0, 10);
   // Päivämäärät ovat YYYY-MM-DD-muodossa, joten merkkijonovertailu "<" toimii
   // oikein aikajärjestyksessä.
-  const snap = await db.collection("dailyMenus").where("date", "<", todayIso).get();
+  const snap = await db.collection(region.dailyMenus).where("date", "<", todayIso).get();
   if (snap.empty) {
-    logger.info("cleanupOldDailyMenus: ei poistettavaa.");
+    logger.info(`cleanupOldDailyMenus[${region.id}]: ei poistettavaa.`);
     return;
   }
   const docs = snap.docs;
@@ -1591,14 +1669,22 @@ async function cleanupOldDailyMenus() {
     docs.slice(i, i + 500).forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
   }
-  logger.info(`cleanupOldDailyMenus: poistettu ${docs.length} vanhaa dailyMenus-dokumenttia.`);
+  logger.info(`cleanupOldDailyMenus[${region.id}]: poistettu ${docs.length} vanhaa ${region.dailyMenus}-dokumenttia.`);
 }
 
 exports.syncDailyMenus = onSchedule(
   { schedule: "0 5 * * *", timeZone: "Europe/Helsinki", timeoutSeconds: 540 },
   async () => {
-    await runAllMenuSources();
-    await cleanupOldDailyMenus();
+    await runAllMenuSources(REGIONS.tampere);
+    await cleanupOldDailyMenus(REGIONS.tampere);
+  }
+);
+// Helsinki: oma funktio, oma kellonaika (Tampereen ajo kestää enintään 9 min ja päättyy ennen tätä).
+exports.syncDailyMenusHelsinki = onSchedule(
+  { schedule: "15 5 * * *", timeZone: "Europe/Helsinki", timeoutSeconds: 540 },
+  async () => {
+    await runAllMenuSources(REGIONS.helsinki);
+    await cleanupOldDailyMenus(REGIONS.helsinki);
   }
 );
 
@@ -1608,9 +1694,9 @@ exports.syncDailyMenus = onSchedule(
 // meille että kohdesivustoille.
 const CONCURRENCY = 8;
 
-async function runAllMenuSources() {
-  const sources = await db.collection("menuSources").where("active", "==", true).get();
-  logger.info(`runAllMenuSources: ${sources.size} aktiivista lähdettä käsiteltävänä`);
+async function runAllMenuSources(region) {
+  const sources = await db.collection(region.menuSources).where("active", "==", true).get();
+  logger.info(`runAllMenuSources[${region.id}]: ${sources.size} aktiivista lähdettä käsiteltävänä`);
 
   const docs = sources.docs;
   const results = new Array(docs.length);
@@ -1622,15 +1708,15 @@ async function runAllMenuSources() {
       const { platform } = sourceData;
       const handler = PLATFORM_HANDLERS[platform];
       if (!handler) {
-        logger.warn(`runAllMenuSources: ${doc.id} - tuntematon platform "${platform}", ohitetaan`);
+        logger.warn(`runAllMenuSources[${region.id}]: ${doc.id} - tuntematon platform "${platform}", ohitetaan`);
         results[i] = { id: doc.id, status: "skipped", reason: `tuntematon platform "${platform}"` };
         continue;
       }
       try {
-        await handler(doc.id, sourceData);
+        await handler(doc.id, sourceData, region);
         results[i] = { id: doc.id, status: "ok" };
       } catch (err) {
-        logger.error(`runAllMenuSources: ${doc.id} (${platform}) epäonnistui:`, err);
+        logger.error(`runAllMenuSources[${region.id}]: ${doc.id} (${platform}) epäonnistui:`, err);
         results[i] = { id: doc.id, status: "error", reason: String(err) };
       }
     }
@@ -1662,27 +1748,15 @@ async function runAllMenuSources() {
 //
 // HUOM tämä on tarkoitettu VAIN PoC/kehitysvaiheeseen. Poista tai lukitse
 // tiukemmin (esim. vaadi Firebase-kirjautuminen) ennen oikeaa julkaisua.
-exports.syncDailyMenusManual = onRequest({ timeoutSeconds: 540 }, async (req, res) => {
-  const expected = (process.env.SYNC_SECRET || "").trim();
-  if (!expected) {
-    res.status(500).send("SYNC_SECRET-ympäristömuuttujaa ei ole asetettu palvelimella.");
-    return;
-  }
-  const given = (req.query.secret || "").toString();
-  if (given !== expected) {
-    // Ei koskaan paljasteta itse arvoja, vain pituudet - auttaa löytämään
-    // näkymättömät välilyönnit/rivinvaihdot jotka aiheuttavat epäsuoran eron.
-    res.status(403).send(
-      `Väärä tai puuttuva secret-parametri. (annetun pituus: ${given.length}, ` +
-      `palvelimen arvon pituus: ${expected.length})`
-    );
-    return;
-  }
-  try {
-    const results = await runAllMenuSources();
-    res.status(200).json({ ok: true, count: results.length, results });
-  } catch (err) {
-    logger.error("syncDailyMenusManual epäonnistui:", err);
-    res.status(500).json({ ok: false, error: String(err) });
-  }
-});
+exports.syncDailyMenusManual = onRequest({ timeoutSeconds: 540 }, (req, res) =>
+  handleManualSync(req, res, "syncDailyMenusManual", async () => {
+    const results = await runAllMenuSources(REGIONS.tampere);
+    return { count: results.length, results };
+  })
+);
+exports.syncDailyMenusHelsinkiManual = onRequest({ timeoutSeconds: 540 }, (req, res) =>
+  handleManualSync(req, res, "syncDailyMenusHelsinkiManual", async () => {
+    const results = await runAllMenuSources(REGIONS.helsinki);
+    return { count: results.length, results };
+  })
+);

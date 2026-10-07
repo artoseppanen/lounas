@@ -1,0 +1,101 @@
+rules_version = '2';
+
+// Tampereen Lounas — Firestore-suojaussäännöt
+//
+// Periaatteet:
+// 1. Ravintolat (restaurants) ovat julkista dataa: kaikki saavat lukea, EI KUKAAN
+//    kirjoita suoraan asiakkaasta — vain palvelinpuolen Cloud Function
+//    (syncRestaurantsFromOverpass) saa kirjoittaa/päivittää niitä.
+// 2. ratingSum ja ratingCount ovat aggregaatteja jotka LASKEE Cloud Function
+//    (onRatingWrite-triggeri), EI asiakas — muuten kuka tahansa voisi vääristää
+//    keskiarvon suoraan selaimesta.
+// 3. Yksittäinen arvio (ratings-alikokoelma) on julkisesti luettavissa
+//    (tarvitaan aggregoinnin läpinäkyvyyteen / debuggaukseen), mutta jokainen
+//    käyttäjä saa kirjoittaa VAIN omalla uid:llään nimetyn dokumentin.
+// 4. Suosikit (favorites) ovat täysin yksityisiä: käyttäjä saa lukea/kirjoittaa
+//    vain omaa alikokoelmaansa.
+// 5. Anonyymi kirjautuminen (Firebase Anonymous Auth) riittää — request.auth
+//    on olemassa myös anonyymille käyttäjälle, uid pysyy samana selaimessa.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Ravintolat: julkinen luku, kirjoitus vain Cloud Functionilta ---
+    // Cloud Functions (Admin SDK) ohittavat nämä säännöt automaattisesti,
+    // joten "allow write: if false" täällä tarkoittaa käytännössä
+    // "vain palvelin saa kirjoittaa, ei yksikään asiakas".
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+      allow write: if false;
+
+      // --- Yksittäiset arviot ravintolan alla ---
+      match /ratings/{userId} {
+        allow read: if true;
+
+        // Käyttäjä saa luoda/päivittää/poistaa VAIN oman arvionsa, ja arvion
+        // pitää olla kokonaisluku 1-5. ratingSum/ratingCount eivät ole tässä
+        // dokumentissa lainkaan — ne lasketaan restaurants-dokumenttiin erikseen.
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5;
+
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // --- Käyttäjän oma data: suosikit ---
+    match /users/{userId}/favorites/{restaurantId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // --- Päivän lounaslistat: julkinen luku, kirjoitus vain Cloud Functionilta ---
+    // Tämä puuttui aiemmin kokonaan, minkä takia asiakas ei päässyt lukemaan
+    // dailyMenus-kokoelmaa lainkaan (putosi alla olevaan "estä kaikki"
+    // -oletussääntöön) - virhe ei näkynyt käyttäjälle koska koodi nieli sen
+    // hiljaa try/catchissa ja jätti vain lounaslohkon näyttämättä.
+    match /dailyMenus/{menuId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // =========================================================================
+    // HELSINKI: omat kokoelmat, TÄSMÄLLEEN samat säännöt kuin Tampereella yllä.
+    // Kokoelmat on erotettu kaupungeittain, jotta yhden kaupungin data tai virhe
+    // ei voi koskaan vaikuttaa toiseen. Nämä säännöt on vain LISÄTTY - Tampereen
+    // säännöt yllä ovat koskemattomia.
+    //
+    // Suosikit (users/{uid}/favorites) ovat jaettu: dokumentin tunnus on
+    // ravintolan OSM-tunnus, joka on yksilöllinen kaupungista riippumatta.
+    // menuSources_helsinki: ei mainintaa tarkoituksella -> putoaa alla olevaan
+    // "kaikki kiinni" -sääntöön (vain palvelin pääsee), kuten menuSources.
+    // =========================================================================
+    match /restaurants_helsinki/{restaurantId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /ratings/{userId} {
+        allow read: if true;
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5;
+
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    match /dailyMenus_helsinki/{menuId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Kaikki muu on oletuksena kiinni.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

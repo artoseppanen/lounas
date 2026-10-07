@@ -1,0 +1,79 @@
+Mikä muuttui	                                Komento
+public/index.html	                        firebase deploy --only hosting
+functions/index.js (parserit, ajastukset)	firebase deploy --only functions
+firestore.rules                                 firebase deploy --only firestore:rules
+menu-sources.csv	  Ei deployta: aja node import-menu-sources.js menu-sources.csv, joka kirjoittaa Firestoreen
+Kaikki kerralla	                                firebase deploy
+
+
+------------------
+
+Ravintoloiden menujen päivitys
+1 LISÄÄ urlit exceliin "menu-sources.csv"
+2 AJA: node import-menu-sources.js menu-sources.csv
+3 (Vain jos koodia muutettiin — esim. uusi parseri) Deployaa funktiot powershellissä:
+> firebase deploy --only functions
+4 päivitä lounaslistat heti (muutoin aamu klo 5 ajossa)
+kirjoita selaimeen: https://us-central1-lounas-appis.cloudfunctions.net/syncDailyMenusManual?secret=x7K9mPqR2wZ4tL8vN3jH6yF1cB4s
+
+
+Ryhmä 2: Tunnistetut ketjut, joille ei vielä ole parseria (Pikante, Juvenes, Sodexo, Amica, Antell, The Kitchen)
+
+Näille tarvitaan yksi uusi parseri per alusta, mutta se kattaa kerralla kaikki saman ketjun ravintolat.
+
+Etsi yksi esimerkki-URL kustakin (esim. Google "Pikante [ravintolan nimi] lounaslista").
+Anna minulle URL, ja jos mahdollista View Source -sisältö samaan tapaan kuin Linkosuolle/Maukkaalle — tämä on tärkeää, koska emme voi enää olettaa rakennetta (Cloudflare-tyyppiset yllätykset olivat hyvä opetus).
+Kirjoitan ja testaan uuden syncOne{Alusta}Menu-funktion oikealla datalla ennen kuin annan sen sinulle, samaan tapaan kuin Linkosuolle ja Poweresta-PDF:lle.
+Lisään sen PLATFORM_HANDLERS-tauluun — sen jälkeen toimii täsmälleen samalla menuSources-rivi+CSV-työnkululla kuin muutkin.
+
+
+
+------------
+
+muita päivityksiä / uuden koodin deploy:
+firebase deploy --only functions 
+firebase deploy --only firestore:rules,functions.
+
+-------------
+
+
+1. restaurants-kokoelma — päivittyy klo 04:00
+
+syncRestaurants-funktio ajaa kerran vuorokaudessa, klo 04:00 Suomen aikaa:
+
+js
+onSchedule({ schedule: "0 4 * * *", timeZone: "Europe/Helsinki" }, ...)
+
+Hakee kaikki Tampereen ravintolat Overpassista ja kirjoittaa/päivittää restaurants-kokoelman. Tämä ei koske lounaslistoja lainkaan — pelkkä ravintolan perustieto (nimi, sijainti, tyyppi, osoite).
+
+
+-------------
+
+
+2. dailyMenus-kokoelma — päivittyy klo 05:00
+
+syncDailyMenus-funktio ajaa klo 05:00 Suomen aikaa (tunti myöhemmin kuin ravintolahaku, tarkoituksella ettei ne kilpaile keskenään):
+
+js
+onSchedule({ schedule: "0 5 * * *", timeZone: "Europe/Helsinki" }, ...)
+
+Logiikka sen sisällä:
+
+Hakee menuSources-kokoelmasta kaikki rivit joilla active == true — ei mitään muuta valintaperustetta.
+Jokaiselle riville katsoo platform-kentän arvon ja valitsee oikean käsittelijän (PLATFORM_HANDLERS-taulukko): poweresta → PDF-haku ja -jäsennys, linkosuo → HTML-sivun haku ja -jäsennys.
+Käsittelijä kirjoittaa tuloksen yhteen dokumenttiin: dailyMenus/{ravintolan_sanitoitu_id}_{tämän_päivän_päivämäärä}, ja merkitsee parseStatus-kentän ("ok", "partial" tai "failed").
+
+Tärkeä huomio: menuSources-kokoelma ei päivity itsestään minkään ajastuksen kautta — se muuttuu vain kun sinä lisäät/muokkaat rivejä (Consolessa käsin, tai import-menu-sources.js:llä CSV:stä). Ajastus vain lukee sitä, ei kirjoita siihen.
+
+
+-------------
+
+
+
+3. Jäsentämisen tiheys
+
+Kerran vuorokaudessa per aktiivinen ravintola, ei useammin. Tämä on tarkoituksenmukaista, koska lounaslista ei muutu kesken päivän — ei ole järkeä hakea samaa dataa uudelleen. Jos haluat pakottaa uuden haun (esim. juuri lisäsit uuden menuSources-rivin etkä halua odottaa huomiseen), käytät manuaalista laukaisinta (syncDailyMenusManual?secret=...) jonka teimme testausta varten — se tekee täsmälleen saman työn, mutta milloin tahansa pyydettäessä.
+
+Yksi rehellinen tekninen nyanssi päivämäärästä
+
+Koodi laskee "tämän päivän" näin: new Date().toISOString().slice(0,10) — tämä on aina UTC-päivämäärä, ei Suomen kalenteripäivä. Klo 05:00 Suomen aikaa tämä ei aiheuta ongelmaa (UTC on silloin klo 02:00-03:00, sama kalenteripäivä kuin Suomessa). Mutta jos käytät manuaalista laukaisinta hyvin aikaisin aamuyöllä (esim. klo 00:30-02:00 Suomen aikaa), UTC saattaa vielä olla edellisessä päivässä, jolloin data kirjoittuisi vahingossa eilisen päivämäärälle. Käytännössä tämä ei haittaa normaalia käyttöä (kukaan ei tarkista lounaslistaa keskellä yötä), mutta jos joskus testaat manuaalisesti hyvin aikaisin aamulla ja tulos näyttää väärältä päivältä, tämä on selitys.
