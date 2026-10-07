@@ -57,9 +57,10 @@
     padding: 12px 10px 10px;
     border-bottom: 1px solid var(--line);
     display: flex;
+    flex-wrap: wrap; /* turvaverkko (WCAG 1.4.10 Reflow): jos kaikki ei mahdu, rivittyy eikä vieritä sivuttain */
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px 10px;
   }
   .brand {
     display: flex;
@@ -779,10 +780,9 @@
     font-size: 12px;
     color: var(--muted);
   }
-  /* Kaupunkivalitsin on toistaiseksi PIILOSSA (testaus: ?kaupunki=helsinki tai poista tämä sääntö
-     DevToolsissa). Kun Helsinki on valmis, vaihda display: none -> display: flex.
-     Korkeus (34px) ja pyöristys (999px) vastaavat suodatinpainiketta (.filter-btn) vierekkäin. */
-  .city-picker { display: none; align-items: center; margin-left: auto; }
+  /* Kaupunkivalitsin (otsikossa). Korkeus (34px) ja pyöristys (999px) vastaavat suodatinpainiketta
+     (.filter-btn) vierekkäin. */
+  .city-picker { display: flex; align-items: center; margin-left: auto; }
   .city-picker select {
     font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); background: #fff;
     border: 1px solid var(--line-strong); border-radius: 999px; height: 34px;
@@ -793,6 +793,31 @@
     background-position: right 10px center; /* 5px vasemmalle oletuksesta (right 15px) */
     background-size: 10px 6px;
     cursor: pointer;
+  }
+  /* Kaupungin valintaruutu ensimmäisellä käynnillä: pakollinen modaali (natiivi <dialog>), jota ei voi
+     sulkea ilman valintaa. Älä aseta .city-dialog:lle display-arvoa: suljettu dialog on display:none. */
+  .city-dialog {
+    border: none; border-radius: 22px; padding: 28px 22px 24px;
+    width: min(92vw, 400px); max-height: 92vh; overflow-y: auto;
+    background: #fff; color: var(--ink); text-align: center;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  }
+  .city-dialog::backdrop { background: rgba(45, 45, 45, 0.72); } /* tumma harmaa, läpikuultava */
+  .city-dialog-brand {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    margin: 0 0 16px; font-family: 'Caveat', cursive; font-size: 40px; line-height: 1; font-weight: 700;
+  }
+  .city-dialog-text { margin: 0 0 22px; font-size: 15px; line-height: 1.5; color: var(--muted); }
+  .city-dialog-buttons { display: flex; flex-direction: column; gap: 12px; }
+  .city-choice {
+    min-height: 60px; border: none; border-radius: 999px; padding: 0 24px;
+    background: var(--ink); color: var(--paper); font-size: 19px; font-weight: 700; cursor: pointer;
+  }
+  .city-choice:hover { background: #2c4136; }
+  .city-choice:active { background: #3a5445; }
+  @media (prefers-reduced-motion: no-preference) {
+    .city-dialog[open] { animation: cityDialogIn 0.18s ease-out; }
+    @keyframes cityDialogIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
   }
   .chip-wrap {
     display: flex;
@@ -968,6 +993,26 @@
       z-index: 1999;
     }
   }
+
+  /* Kapeat näytöt (tämä lohko on tarkoituksella tyylien LOPUSSA: perussäännöt .filter-btn ja .city-picker select
+     on määritelty aiemmin, ja myöhempi sääntö voittaa): logo + kaupunkivalitsin + suodatin (+ aktiivisten suodattimien määrä) mahtuvat yhteen riviin.
+     Mitattu oikeilla fonteilla: ilman näitä otsikko ylittyy alle ~361px (ja ~388px kun suodattimia on käytössä). */
+  @media (max-width: 400px) {
+    header { column-gap: 6px; }
+    .city-picker select { padding: 0 24px 0 12px; }
+    .filter-btn { padding: 0 12px; }
+  }
+  @media (max-width: 380px) {
+    header h1 { font-size: 24px; }
+    .brand { gap: 5px; }
+  }
+  @media (max-width: 359px) {
+    /* Alle 360px: vain logokuva, sanamerkki piiloon visuaalisesti (otsikko jää apuvälineille) */
+    header h1 {
+      position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+    }
+  }
 </style>
 </head>
 <body>
@@ -1090,6 +1135,33 @@
 
 <!-- 4.1.3: tilaviestit ruudunlukijalle (suosikit, arviot, hakutulosten määrä, suodatuksen tulos) -->
 <div id="liveStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Kaupungin valinta ensimmäisellä käynnillä (ei tunnettua kaupunkia osoitteessa tai selaimessa).
+     Natiivi modaali: tausta on inertti ja Tab pysyy dialogissa. Ei sulkemispainiketta eikä Esc-sulkua,
+     koska ilman valintaa ei ladata mitään dataa. Avataan ja suljetaan skriptissä (openCityDialog). -->
+<dialog class="city-dialog" id="cityDialog" aria-labelledby="cityDialogTitle" aria-describedby="cityDialogText">
+  <h2 class="city-dialog-brand" id="cityDialogTitle">
+      <svg class="city-dialog-logo" viewBox="0 0 72 48.4" width="60" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill="var(--accent)" d="M36.7,0.4C23.6,0.4,13,11,13,24.1c0,13.1,10.6,23.7,23.7,23.7c13.1,0,23.7-10.6,23.7-23.7
+          C60.4,11,49.8,0.4,36.7,0.4 M36.7,42.9c-10.4,0-18.8-8.4-18.8-18.8c0-10.4,8.4-18.8,18.8-18.8c10.4,0,18.8,8.4,18.8,18.8
+          C55.5,34.4,47.1,42.9,36.7,42.9"/>
+        <path fill="var(--accent)" d="M36.7,7.4C27.5,7.4,20,14.9,20,24.1s7.5,16.7,16.7,16.7c9.2,0,16.7-7.5,16.7-16.7S45.9,7.4,36.7,7.4"/>
+        <path fill="var(--accent)" d="M9,3.3c0-0.8-1.3-0.8-1.3,0c0,0.6-0.1,10.6-0.1,11.2c0,0.7-0.8,0.7-0.8,0c-0.1-0.7-0.2-11-0.2-11.3
+          c0-0.7-1.3-0.8-1.3,0c0,0.4-0.1,11.2-0.1,11.5c0,0.4-0.5,0.4-0.5,0.4s-0.5,0-0.5-0.4c0-0.4-0.1-11.1-0.1-11.5c0-0.9-1.3-0.8-1.3,0
+          c0,0.3-0.1,10.7-0.2,11.3c-0.1,0.7-0.8,0.7-0.8,0c0-0.7-0.1-10.6-0.1-11.2c0-0.8-1.3-0.8-1.3,0c0,0.4-0.3,7.4-0.3,11
+          c-0.1,3.6,0.9,5.7,2.1,6.7c0.4,0.3,0.9,0.8,0.9,1.5L2.9,43.8c0,1,0.8,1.8,1.8,1.8c1,0,1.8-0.8,1.8-1.8L6.3,22.4
+          c0-0.7,0.5-1.2,0.9-1.5c1.3-0.9,2.2-3.1,2.1-6.7C9.3,10.7,9,3.7,9,3.3"/>
+        <path fill="var(--accent)" d="M71.2,21V3.6c0-3.2-5.7,1.2-6.1,12.8c0,0.4-0.1,3.7-0.1,5.3c0,3.6,0.7,4.7,2.1,5.3c0.4,0.2,1,0.5,1,0.5
+          l-0.3,16.4c0,1,0.8,1.8,1.8,1.8c1,0,1.8-0.8,1.8-1.8L71.2,21z"/>
+      </svg>
+      Lounas
+  </h2>
+  <p class="city-dialog-text" id="cityDialogText">Valitse kaupunki, jonka lounastarjontaan haluat tutustua. Voit aina muuttaa valintaa myöhemmin.</p>
+  <div class="city-dialog-buttons">
+    <button type="button" class="city-choice" data-city="tampere" autofocus>Tampere</button>
+    <button type="button" class="city-choice" data-city="helsinki">Helsinki</button>
+  </div>
+</dialog>
 
 <div class="filter-backdrop" id="filterBackdrop"></div>
 <div class="filter-overlay" id="filterOverlay" role="dialog" aria-modal="true" aria-labelledby="filterTitle" hidden>
@@ -1224,11 +1296,12 @@ function regionFromId(id) {
   return Object.prototype.hasOwnProperty.call(REGIONS, key) ? REGIONS[key] : null;
 }
 // Alkuvalinnan järjestys: 1) osoitteen ?kaupunki=... (vain tällä käynnillä, ei tallennu),
-// 2) selaimeen tallennettu oma valinta, 3) oletus (Tampere).
+// 2) selaimeen tallennettu oma valinta. Muuten null = kaupunkia ei tunneta, jolloin käyttäjältä
+// kysytään (ks. kaupungin valintaruutu).
 function pickInitialRegion(search, stored) {
   let fromUrl = null;
   try { fromUrl = regionFromId(new URLSearchParams(search).get('kaupunki')); } catch (e) {}
-  return fromUrl || regionFromId(stored) || REGIONS[DEFAULT_REGION_ID];
+  return fromUrl || regionFromId(stored) || null;
 }
 // Osoite jossa ?kaupunki on asetettu; muut parametrit ja #-osa säilyvät
 function urlForRegion(href, id) {
@@ -1238,7 +1311,18 @@ function urlForRegion(href, id) {
 }
 function loadStoredRegionId() { try { return localStorage.getItem(REGION_STORAGE_KEY); } catch (e) { return null; } }
 function saveRegionId(id) { try { localStorage.setItem(REGION_STORAGE_KEY, id); } catch (e) {} }
-let currentRegion = pickInitialRegion(window.location.search, loadStoredRegionId());
+// Palaavat Tampere-käyttäjät (selaimessa on jo sovelluksen Tampere-välimuisti tai omat suosikit/arviot
+// ajalta ennen kaupunkivalintaa) eivät saa valintaruutua: heille valitaan hiljaa Tampere, eikä sitä
+// tallenneta, koska se ei ole heidän oma valintansa. Aseta false, jos kaikille halutaan näyttää ruutu kerran.
+const SKIP_CITY_DIALOG_FOR_RETURNING_USERS = true;
+function isReturningTampereUser() {
+  try { return localStorage.getItem(REGIONS.tampere.cacheKey) !== null || localStorage.getItem('tampereLounasUserData') !== null; } catch (e) { return false; }
+}
+const initialRegionPick = pickInitialRegion(window.location.search, loadStoredRegionId());
+// true = kaupunkia ei vielä tiedetä: näytetään valintaruutu eikä ladata dataa ennen valintaa
+let regionPending = !initialRegionPick && !(SKIP_CITY_DIALOG_FOR_RETURNING_USERS && isReturningTampereUser());
+// Ennen valintaa kartta on silti alustettava jonnekin: oletuskaupunki (näkyy vain himmeän ruudun takana)
+let currentRegion = initialRegionPick || REGIONS[DEFAULT_REGION_ID];
 
 let restaurants = [];
 let listFilterMode = 'visible'; // 'visible' | 'all'
@@ -3487,11 +3571,56 @@ function switchRegion(id) {
 citySelect.addEventListener('change', () => switchRegion(citySelect.value));
 buildCitySelect();
 
+// ---------------------------------------------------------------------------
+// Kaupungin valintaruutu (ensimmäinen käynti). Pakollinen: ei sulkemispainiketta, Esc ei sulje
+// (cancel estetään) eikä taustan napautus. Chromen "Esc kahdesti" voi silti sulkea modaalin
+// cancel-eston jälkeen, joten close-tapahtumassa avataan ruutu uudelleen jos valintaa ei ole tehty.
+// Dataa ei ladata ennen valintaa (loadAllRestaurantsOnce käynnistyy vasta startWithRegionissa).
+// ---------------------------------------------------------------------------
+const cityDialog = document.getElementById('cityDialog');
+function openCityDialog() {
+  if (!cityDialog.open) cityDialog.showModal();
+}
+function startWithRegion(id) {
+  const chosen = regionFromId(id);
+  if (!chosen || !regionPending) return;
+  regionPending = false;
+  currentRegion = chosen;
+  citySelect.value = chosen.id;
+  saveRegionId(chosen.id);
+  try { history.replaceState(history.state, '', urlForRegion(window.location.href, chosen.id)); } catch (e) {}
+  map.setView(chosen.center, chosen.zoom, { animate: false });
+  if (cityDialog.open) cityDialog.close();
+  // Fokus valitsimeen: käyttäjä näkee/kuulee valitun kaupungin ja voi vaihtaa sen myöhemmin
+  citySelect.focus();
+  loadAllRestaurantsOnce().then(() => {
+    if (currentRegion === chosen && restaurants.length > 0) {
+      announce(`Näytetään ${chosen.nameGen} ravintolat, ${restaurants.length} kpl`);
+    }
+  });
+}
+cityDialog.querySelectorAll('.city-choice').forEach((btn) => {
+  btn.addEventListener('click', () => startWithRegion(btn.dataset.city));
+});
+cityDialog.addEventListener('cancel', (e) => e.preventDefault());
+cityDialog.addEventListener('close', () => {
+  if (regionPending) { try { cityDialog.showModal(); } catch (e) {} }
+});
+
 showTab('map');
 showSidebarTab('list');
 renderList();
 updateFavTabLabel();
-loadAllRestaurantsOnce();
+if (!regionPending) {
+  loadAllRestaurantsOnce();
+} else if (typeof cityDialog.showModal === 'function') {
+  openCityDialog();
+} else {
+  // Hyvin vanha selain ilman <dialog>-tukea: ei jumiteta käyttäjää, vaan käytetään oletuskaupunkia
+  // (valitsin on silti näkyvissä otsikossa).
+  regionPending = false;
+  loadAllRestaurantsOnce();
+}
 </script>
 </body>
 </html>
