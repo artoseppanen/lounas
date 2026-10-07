@@ -1288,11 +1288,21 @@ document.getElementById('retryLoadLink').onclick = (e) => {
   location.reload();
 };
 
+// Latausteksti arvotaan KERRAN sivun latauksella (ei joka kutsulla): haku voi siirtyä Firestoresta
+// varapolulle ja kutsua setLoadingBanner('loading') uudelleen, eikä teksti saa vaihtua kesken latauksen.
+// "Yritä uudelleen" lataa sivun uudelleen, jolloin arvotaan uusi.
+const LOADING_MESSAGES = [
+  'Haetaan ravintolat… Sydän sykkii, vatsa pyrkii!',
+  'Haetaan ravintolat… Pöytä on koreana!',
+  'Haetaan ravintolat… Haarukat ja veitset esiin!',
+];
+const LOADING_TEXT = LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)];
+
 function setLoadingBanner(state, text) {
   const el = document.getElementById('loadingBanner');
   const textEl = el.querySelector('.loading-text');
   if (state === 'loading') {
-    textEl.textContent = text || 'Haetaan ravintolat…';
+    textEl.textContent = text || LOADING_TEXT;
     el.classList.remove('error');
     el.classList.add('visible');
   } else if (state === 'error') {
