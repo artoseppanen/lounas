@@ -27,6 +27,7 @@
     --select-border: #b35500; /* valitun kortin kehys: 4.98:1 valkoista vasten (1.4.11) */
     --line: #d8d0c0;
     --line-strong: #97845e; /* tummennettu reuna interaktiivisille komponenteille (3:1 vaatimus) */
+    --shadow-card-hover: 0 6px 18px rgba(28, 43, 36, 0.18); /* korttien hover-varjo (aiemmin 0 4px 14px / 0.12) */
     --border-light: #ccc; /* vaalea kehys: listanäkymien kortit, lounaslistahaitari ja nimihaku (vaaleampi kuin --line-strong) */
     --muted: #5b6a61; /* korvaa aiemman liian vaalean #93998f:n (2.9:1 -> ei täyttänyt 4.5:1) */
     font-family: 'Manrope', -apple-system, "Helvetica Neue", Arial, sans-serif;
@@ -309,7 +310,7 @@
     transition: box-shadow 0.15s ease, border-color 0.15s ease;
   }
   .card:hover {
-    box-shadow: 0 4px 14px rgba(28,43,36,0.12);
+    box-shadow: var(--shadow-card-hover);
     border-color: var(--border-light);
   }
   .card:active { background: var(--accent-soft); }
