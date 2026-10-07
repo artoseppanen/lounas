@@ -363,6 +363,11 @@
     font-size: 13.5px;
     color: #5b6a61;
   }
+  /* Verkkosivusto + osoite samalla rivillä (sama kortissa ja alapaneelissa) */
+  .info-links { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; font-size: 13.5px; }
+  .info-links .website-link { margin-top: 0; }
+  .info-addr { color: #5b6a61; }
+  .card .rating-row { margin: 3px 0 7px; } /* tähdet otsikon alla */
   .pin-icon {
     color: #5b6a61;
     vertical-align: -1px;
@@ -701,9 +706,8 @@
   .sheet-title-row h2 { margin: 0; font-size: 18px; line-height: 1.25; }
   .m-sheet-body .rating-row { margin: 4px 0 8px; }
   .m-sheet-body .genre { margin-bottom: 6px; }
-  .sheet-links { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 2px; font-size: 15px; }
-  .sheet-links .website-link { margin-top: 0; font-size: 15px; }
-  .sheet-addr { color: #5b6a61; }
+  .sheet-links { gap: 6px 16px; margin: 6px 0 2px; font-size: 15px; }
+  .sheet-links .website-link { font-size: 15px; }
   .m-sheet-body .hours { font-size: 15px; margin-top: 6px; }
   /* Lounaslista paneelissa: pelkkä sisältö valkoisella taustalla, ei haitaria */
   .lunch-plain { margin-top: 16px; }
@@ -1558,15 +1562,23 @@ let sheetReturnState = null; // tila josta otsikkorivin napautus laajensi paneel
 let sheetLastDragEnd = -1e9; // vedon päättymisaika (ms), jolla estetään vedon jälkeinen haamuklikkaus
 const sheetDrag = { active: false, mode: null, isMouse: false, fromBody: false, startY: 0, startPos: 0, lastY: 0, lastT: 0, vel: 0 };
 
+// Tietojen yhteinen järjestys kortissa (lista/suosikit) ja kartan alapaneelissa:
+// otsikko, "Ei auki lounasaikaan" -varoitus (jos on), tähdet, tyyppi, [verkkosivusto + osoite samalla rivillä], lounaslista.
+// Verkkosivusto ja osoite ovat samalla rivillä (rivittyy kapealla); tyhjää riviä ei tehdä.
+function infoLinksHtml(r, cls) {
+  const addr = r.addr ? `<span class="info-addr">${ADDR_ICON} ${escapeHtml(r.addr)}</span>` : '';
+  const web = websiteLinkHtml(r);
+  if (!web && !addr) return '';
+  return `<div class="${cls}">${web}${addr}</div>`;
+}
 function sheetHtml(r) {
-  const addr = r.addr ? `<span class="sheet-addr">${ADDR_ICON} ${escapeHtml(r.addr)}</span>` : '';
   return `<div class="sheet-title-row">
       <h2 id="sheetTitle" tabindex="-1">${escapeHtml(r.name)}</h2>
     </div>
+    ${openingHoursHtml(r)}
     ${starsHtml(r.id)}
     ${genreHtml(r)}
-    <div class="sheet-links">${websiteLinkHtml(r)}${addr}</div>
-    ${openingHoursHtml(r)}
+    ${infoLinksHtml(r, 'info-links sheet-links')}
     ${lunchSummaryHtml(r, true)}`;
 }
 
@@ -2184,8 +2196,42 @@ function focusSelectedCard(opener) {
   // preventScroll: vierityksen hoitaa oma animaatio (scrollCardIntoView), selain ei saa kilpailla siinä
   btn.focus({ preventScroll: true });
 }
+// Työpöytä: kun ravintola valitaan kartalta, sen lounaslista avautuu listassa automaattisesti
+// (ei erillisiä klikkauksia) ja sulkeutuu, kun valinta vaihtuu tai poistuu. Suljetaan vain se
+// haitari, jonka itse avasimme; käyttäjän omia avauksia ("Avaa lounaslistat", oma klikkaus) ei kosketa.
+let autoOpenedLunchId = null;
+
+function lunchWrapsFor(id) {
+  return Array.from(document.querySelectorAll('.card[data-restaurant-id]'))
+    .filter(c => c.dataset.restaurantId === id)
+    .map(c => c.querySelector('.lunch-summary'))
+    .filter(Boolean);
+}
+function setLunchWrapExpanded(wrap, expanded) {
+  wrap.classList.toggle('expanded', expanded);
+  const btn = wrap.querySelector('.lunch-toggle');
+  if (btn) btn.setAttribute('aria-expanded', String(expanded));
+}
+function closeAutoOpenedLunch() {
+  if (!autoOpenedLunchId) return;
+  lunchWrapsFor(autoOpenedLunchId).forEach(w => setLunchWrapExpanded(w, false));
+  autoOpenedLunchId = null;
+}
+function openLunchForSelection(id) {
+  if (autoOpenedLunchId && autoOpenedLunchId !== id) closeAutoOpenedLunch();
+  const wraps = lunchWrapsFor(id);
+  if (autoOpenedLunchId === id) { wraps.forEach(w => setLunchWrapExpanded(w, true)); return; }
+  if (allLunchExpanded) return;                                         // kaikki jo auki
+  if (wraps.some(w => w.classList.contains('expanded'))) return;        // käyttäjä avasi jo itse: ei suljeta myöhemmin
+  // Merkitään vaikka kortti ei vielä olisi DOM:ssa (ensureRestaurantInList piirtää sen): lunchSummaryHtml piirtää sen auki
+  autoOpenedLunchId = id;
+  wraps.forEach(w => setLunchWrapExpanded(w, true));
+}
+
 function selectRestaurantDesktop(id, opts = {}) {
   const opener = document.activeElement;
+  if (opts.openLunch) openLunchForSelection(id);
+  else if (autoOpenedLunchId && autoOpenedLunchId !== id) closeAutoOpenedLunch(); // toinen valinta sulkee edellisen
   setSelectedMarker(id);
   revealSelectedInSidebar();
   if (opts.moveFocus) focusSelectedCard(opener);
@@ -2199,6 +2245,7 @@ function clearSelection(opts = {}) {
   const sidebarHadFocus = !!(ae && ae.closest && ae.closest('#listCards, #favCards'));
   revealPendingUntil = 0;
   setSelectedMarker(null);
+  closeAutoOpenedLunch(); // valinnan päättyessä automaattisesti avattu lounaslista sulkeutuu
   const opener = selectionOpenerEl;
   selectionOpenerEl = null;
   if (opts.restoreFocus && sidebarHadFocus && opener && opener !== document.body && document.body.contains(opener)) {
@@ -2208,7 +2255,7 @@ function clearSelection(opts = {}) {
 
 function onMarkerClick(id) {
   if (isMobileLayout()) openMobileSheet(id);
-  else selectRestaurantDesktop(id, { moveFocus: true });
+  else selectRestaurantDesktop(id, { moveFocus: true, openLunch: true });
 }
 
 function rebuildMarkers() {
@@ -2608,9 +2655,10 @@ function allergenBadges(codes) {
 function lunchPlainHtml(detailHtml) {
   return `<div class="lunch-plain">${detailHtml}</div>`;
 }
-function lunchToggleWrapper(summaryText, detailHtml) {
-  const expandedClass = allLunchExpanded ? ' expanded' : '';
-  const ariaExpanded = allLunchExpanded ? 'true' : 'false';
+function lunchToggleWrapper(summaryText, detailHtml, forceOpen = false) {
+  const open = allLunchExpanded || forceOpen;
+  const expandedClass = open ? ' expanded' : '';
+  const ariaExpanded = open ? 'true' : 'false';
   return `<div class="lunch-summary${expandedClass}">
     <button type="button" class="lunch-toggle" data-fk="lunch" aria-expanded="${ariaExpanded}" onclick="event.stopPropagation(); toggleLunchDetail(this)">
       <span class="lunch-toggle-text">${summaryText}</span>
@@ -2620,6 +2668,29 @@ function lunchToggleWrapper(summaryText, detailHtml) {
     </button>
     <div class="lunch-detail" onclick="event.stopPropagation(); toggleLunchDetail(this.closest('.lunch-summary').querySelector('.lunch-toggle'))">${detailHtml}</div>
   </div>`;
+}
+
+// Edullisin hinta haitarin otsikkoon, jotta hinnan näkee avaamatta listaa. Hintatekstit ovat
+// lähteestä ("12,90 €"): verrataan numeroarvoja ja näytetään alkuperäinen teksti. Jos eri
+// suuruisia hintoja on useita, edessä "alk." (muuten luku näyttäisi olevan kaikkien vaihtoehtojen
+// hinta). Alle 8 € ja yli 100 € olevat arvot ohitetaan: pienet summat ovat tyypillisesti lisäpalveluja
+// (jälkiruoka, kahvi) tai virheellistä jäsennystä. Palauttaa tyhjän jos yhtään kelvollista hintaa ei löydy.
+const MIN_LUNCH_PRICE = 8;
+function cheapestPriceText(prices) {
+  const parsed = [];
+  (prices || []).forEach(p => {
+    const raw = String(p && p.price != null ? p.price : '').trim();
+    const m = raw.match(/\d+(?:[.,]\d{1,2})?/);
+    if (!m) return;
+    const v = parseFloat(m[0].replace(',', '.'));
+    if (!(v >= MIN_LUNCH_PRICE && v < 100)) return;
+    parsed.push({ v, text: raw });
+  });
+  if (!parsed.length) return '';
+  const min = parsed.reduce((a, b) => (b.v < a.v ? b : a));
+  const several = new Set(parsed.map(x => x.v.toFixed(2))).size > 1;
+  const text = /€/.test(min.text) ? min.text : min.text + ' €';
+  return (several ? 'alk. ' : '') + text;
 }
 
 // plain=true: palauttaa pelkän sisällön ilman haitaria (käytetään mobiilin
@@ -2642,10 +2713,13 @@ function lunchSummaryHtml(r, plain = false) {
           ${rawLines.map(line => `<div class="lunch-item">${escapeHtml(line)}</div>`).join('')}
         </div>
       `;
-      const summaryText = real.prices && real.prices[0]
-        ? `Tänään: ${real.prices[0].label} ${real.prices[0].price}`
-        : 'Näytä päivän lounaslista';
-      return plain ? lunchPlainHtml(detail) : lunchToggleWrapper(summaryText, detail);
+      const cheapest = cheapestPriceText(real.prices);
+      const summaryText = cheapest
+        ? `Näytä päivän lounaslista · ${escapeHtml(cheapest)}`
+        : (real.prices && real.prices[0]
+          ? `Tänään: ${real.prices[0].label} ${real.prices[0].price}` // hintaa ei saatu luettua numerona: näytetään lähteen teksti
+          : 'Näytä päivän lounaslista');
+      return plain ? lunchPlainHtml(detail) : lunchToggleWrapper(summaryText, detail, r.id === autoOpenedLunchId);
     }
 
     // parseStatus === 'ok': täysin jäsennelty (esim. Poweresta-PDF)
@@ -2664,9 +2738,9 @@ function lunchSummaryHtml(r, plain = false) {
     const mains = sections['Pääruoaksi'] || [];
     const moreMains = Math.max(0, mains.length - 1);
     const firstMain = mains[0] ? mains[0].name : '';
-    const firstPrice = real.prices && real.prices[0] ? real.prices[0].price : '';
-    const summaryText = `Tänään: ${firstPrice}${firstMain ? ' · ' + escapeHtml(firstMain) : ''}${moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : ''}`;
-    return plain ? lunchPlainHtml(detail) : lunchToggleWrapper(summaryText, detail);
+    const priceText = cheapestPriceText(real.prices) || (real.prices && real.prices[0] ? real.prices[0].price : '');
+    const summaryText = `Tänään: ${[escapeHtml(priceText), firstMain && escapeHtml(firstMain)].filter(Boolean).join(' · ')}${moreMains > 0 ? ` + ${moreMains} muuta vaihtoehtoa` : ''}`;
+    return plain ? lunchPlainHtml(detail) : lunchToggleWrapper(summaryText, detail, r.id === autoOpenedLunchId);
   }
 
   // 2) Ei vielä oikeaa dataa tälle ravintolalle (esim. menuSources-riviä ei ole
@@ -2679,6 +2753,9 @@ function toggleLunchDetail(btn) {
   const wrap = btn.closest('.lunch-summary');
   const expanded = wrap.classList.toggle('expanded');
   btn.setAttribute('aria-expanded', String(expanded));
+  // Käyttäjä otti haitarin haltuunsa: ei enää automaattisesti hallittu (ei suljeta eikä avata uudelleen valinnan mukana)
+  const card = btn.closest('.card[data-restaurant-id]');
+  if (card && card.dataset.restaurantId === autoOpenedLunchId) autoOpenedLunchId = null;
 }
 window.toggleLunchDetail = toggleLunchDetail;
 
@@ -2702,6 +2779,7 @@ function applyGlobalLunchState() {
   const btn = document.getElementById(id);
   if (btn) btn.onclick = () => {
     allLunchExpanded = !allLunchExpanded;
+    autoOpenedLunchId = null; // "Avaa/Sulje lounaslistat" ohittaa valinnan automaattisen avauksen
     applyGlobalLunchState();
   };
 });
@@ -2845,14 +2923,11 @@ function cardHtml(r) {
         <h3><button type="button" class="card-title-btn" data-fk="title"${selectedMarkerId === r.id ? ' aria-current="true"' : ''} onclick="event.stopPropagation(); focusOnMap('${r.id}')">${escapeHtml(r.name)}<span class="visually-hidden"> – näytä kartalla</span></button></h3>
         ${heartHtml(r.id)}
       </div>
-      ${genreHtml(r)}
-      <p class="addr">${r.addr ? ADDR_ICON + ' ' + escapeHtml(r.addr) : ''}</p>
       ${openingHoursHtml(r)}
-      ${websiteLinkHtml(r)}
+      ${starsHtml(r.id)}
+      ${genreHtml(r)}
+      ${infoLinksHtml(r, 'info-links card-links')}
       ${lunchSummaryHtml(r)}
-      <div class="card-actions">
-        ${starsHtml(r.id)}
-      </div>
     </article>
   `;
 }
