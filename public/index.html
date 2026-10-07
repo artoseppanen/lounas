@@ -1090,10 +1090,10 @@
     </div>
     <div class="filter-section">
       <h3>Tyyppi</h3>
+      <h4 class="filter-subheading">Tyyli / ruokavalio</h4>
+      <div class="chip-wrap" id="typeChipsStyle"></div>
       <h4 class="filter-subheading">Kansallisuuspohjaiset</h4>
       <div class="chip-wrap" id="typeChipsNationality"></div>
-      <h4 class="filter-subheading">Muu tyyli</h4>
-      <div class="chip-wrap" id="typeChipsStyle"></div>
     </div>
   </div>
   <div class="filter-footer">
@@ -1279,7 +1279,9 @@ function elementToRestaurant(el) {
     website,
     openingHours,
     amenity,
-    categories: computeCategories(rawCuisine, amenity)
+    categories: computeCategories(rawCuisine, amenity),
+    dietVegetarian: tags["diet:vegetarian"] || "",
+    dietVegan: tags["diet:vegan"] || ""
   };
 }
 
@@ -2303,12 +2305,27 @@ let nameQuery = '';
 // korttien oletustilaan että jo näkyvillä oleviin kortteihin heti klikattaessa.
 let allLunchExpanded = false;
 
+// "Vege"-chip Tyyli / ruokavalio -ryhmässä. Perustuu OSM:n tageihin diet:vegetarian ja diet:vegan:
+// ravintola osuu, jos jompikumpi on yes (kunnollinen valikoima) tai only (pelkästään tätä).
+// limited ja no eivät riitä (liian vähän tai ei lainkaan). Arvo voi olla puolipistelista
+// ("yes;limited"): kelpaa, jos jokin osa on yes tai only. Vegaaninen on aina myös kasvisruokaa,
+// joten diet:vegan=yes riittää ilman erillistä diet:vegetarian-tagia (OSM:n wiki).
+// Chip toimii kuten muutkin tyyppichipit (useita valittaessa TAI), mutta ei ole cuisine-kategoria:
+// kuuluvuus päätellään suoraan diet-kentistä osumahetkellä, joten välimuistissa olevat vanhat
+// kategoriat eivät voi mennä pieleen.
+const VEGE_CHIP_LABEL = 'Vege';
+function dietOffered(value) {
+  return String(value || '').toLowerCase().split(';').some(v => { v = v.trim(); return v === 'yes' || v === 'only'; });
+}
+function offersVege(r) { return dietOffered(r.dietVegetarian) || dietOffered(r.dietVegan); }
+
 function matchesFilters(r) {
   if (nameQuery.length >= 2 && !r.name.toLowerCase().includes(nameQuery)) return false;
   if (activeFilters.minRatingAvg > 0 && getCommunityAvg(r.id) < activeFilters.minRatingAvg) return false;
   if (activeFilters.minRatingOwn > 0 && getRating(r.id) < activeFilters.minRatingOwn) return false;
   if (activeFilters.types.size > 0) {
-    const hit = (r.categories || []).some(c => activeFilters.types.has(c));
+    const hit = (r.categories || []).some(c => activeFilters.types.has(c))
+      || (activeFilters.types.has(VEGE_CHIP_LABEL) && offersVege(r));
     if (!hit) return false;
   }
   if (activeFilters.openNow) {
@@ -3171,7 +3188,9 @@ document.getElementById('filterAll').onclick = () => {
 // --- Suodatinpaneeli ---
 const typeChipsNationalityEl = document.getElementById('typeChipsNationality');
 const typeChipsStyleEl = document.getElementById('typeChipsStyle');
-CUISINE_CATEGORIES.forEach(c => {
+// Vege on ryhmän ensimmäinen valinta (ruokavalio erottuu tyylien joukossa); muut chipit tulevat CUISINE_CATEGORIES-listasta
+const TYPE_CHIP_DEFS = [{ label: VEGE_CHIP_LABEL, group: 'style' }, ...CUISINE_CATEGORIES];
+TYPE_CHIP_DEFS.forEach(c => {
   const chip = document.createElement('button');
   chip.type = 'button';
   chip.className = 'chip';
