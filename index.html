@@ -1212,6 +1212,7 @@ const CUISINE_CATEGORIES = [
   { label: "Ranskalainen", match: ["french"], group: "nationality" },
   { label: "Skandinaavinen", match: ["scandinavian", "nordic"], group: "nationality" },
   { label: "Street kitchen", match: ["street_food"], group: "style" },
+  { label: "Sushi", match: ["sushi"], group: "style" }, // cuisine=sushi; kuuluu samalla myös Japanilaiseen (sen match sisältää sushin)
   { label: "Suomalainen", match: ["finnish"], group: "nationality" },
   { label: "Thaimaalainen", match: ["thai"], group: "nationality" },
   { label: "Venäläinen", match: ["russian"], group: "nationality" },
@@ -2319,13 +2320,56 @@ function dietOffered(value) {
 }
 function offersVege(r) { return dietOffered(r.dietVegetarian) || dietOffered(r.dietVegan); }
 
+// "Buffet"-chip. Ravintola osuu, jos
+//  (a) OSM:n cuisine sisältää "buffet" (cuisineRaw on jo Firestoressa; vanha, harvinainen tagi), TAI
+//  (b) tämän päivän lounaslistassa mainitaan buffet / noutopöytä / seisova pöytä (hintaotsikot,
+//      jäsentämätön teksti tai ruokarivit). Tieto on päiväkohtaista: viikonloppuna tai ilman
+//      jäsennettyä lounaslistaa osuma tulee vain kohdasta (a).
+// Osittaiset buffetit eivät kelpaa: salaatti-, leipä-, keitto-, jälkiruoka-, kahvi- ja aamiaisbuffet
+// ovat lisäpöytiä eivätkä kerro, että ravintola on buffet-ravintola.
+const BUFFET_CHIP_LABEL = 'Buffet';
+const BUFFET_WORD_SOURCE = '([a-zåäö-]*)(buffet|noutopöyt|seisova\\s*pöyt|seisovapöyt)';
+const BUFFET_PARTIAL_PREFIX = /(salaatti|leipä|keitto|jälkiruoka|kahvi|aamiais)-?$/i;
+function mentionsLunchBuffet(text) {
+  if (!text) return false;
+  const re = new RegExp(BUFFET_WORD_SOURCE, 'gi'); // uusi RegExp joka kutsulla: g-lipun lastIndex ei vuoda kutsujen välillä
+  const str = String(text);
+  let m;
+  while ((m = re.exec(str)) !== null) {
+    if (!BUFFET_PARTIAL_PREFIX.test(m[1])) return true;
+    if (m[0].length === 0) re.lastIndex++; // varmuus ikuisen silmukan varalta
+  }
+  return false;
+}
+function cuisineHasBuffet(r) {
+  return /buffet/i.test(String(r.cuisineRaw || r.cuisine || ''));
+}
+function lunchHasBuffetToday(r) {
+  if (!isWeekdayToday()) return false;
+  const real = realDailyMenus[r.id];
+  if (!real || real.parseStatus === 'failed') return false;
+  const texts = (real.prices || []).map(p => p && p.label);
+  if (real.rawText) texts.push(real.rawText);
+  Object.values(real.sections || {}).forEach(items => (items || []).forEach(it => texts.push(it && it.name)));
+  return texts.some(mentionsLunchBuffet);
+}
+function offersBuffet(r) { return cuisineHasBuffet(r) || lunchHasBuffetToday(r); }
+
+// Johdetut tyyppichipit: eivät ole cuisine-kategorioita, vaan kuuluvuus päätellään suoraan datasta
+// osumahetkellä (välimuistin vanhat kategoriat eivät voi mennä pieleen). Toimivat kuten muut
+// tyyppichipit: useita valittaessa TAI, muihin suodattimiin AND.
+const DERIVED_TYPES = [
+  { label: VEGE_CHIP_LABEL, test: (r) => offersVege(r) },
+  { label: BUFFET_CHIP_LABEL, test: (r) => offersBuffet(r) },
+];
+
 function matchesFilters(r) {
   if (nameQuery.length >= 2 && !r.name.toLowerCase().includes(nameQuery)) return false;
   if (activeFilters.minRatingAvg > 0 && getCommunityAvg(r.id) < activeFilters.minRatingAvg) return false;
   if (activeFilters.minRatingOwn > 0 && getRating(r.id) < activeFilters.minRatingOwn) return false;
   if (activeFilters.types.size > 0) {
     const hit = (r.categories || []).some(c => activeFilters.types.has(c))
-      || (activeFilters.types.has(VEGE_CHIP_LABEL) && offersVege(r));
+      || DERIVED_TYPES.some(d => activeFilters.types.has(d.label) && d.test(r));
     if (!hit) return false;
   }
   if (activeFilters.openNow) {
@@ -3188,8 +3232,8 @@ document.getElementById('filterAll').onclick = () => {
 // --- Suodatinpaneeli ---
 const typeChipsNationalityEl = document.getElementById('typeChipsNationality');
 const typeChipsStyleEl = document.getElementById('typeChipsStyle');
-// Vege on ryhmän ensimmäinen valinta (ruokavalio erottuu tyylien joukossa); muut chipit tulevat CUISINE_CATEGORIES-listasta
-const TYPE_CHIP_DEFS = [{ label: VEGE_CHIP_LABEL, group: 'style' }, ...CUISINE_CATEGORIES];
+// Johdetut chipit (Vege, Buffet) ovat Tyyli / ruokavalio -ryhmän ensimmäiset valinnat; muut tulevat CUISINE_CATEGORIES-listasta
+const TYPE_CHIP_DEFS = [...DERIVED_TYPES.map(d => ({ label: d.label, group: 'style' })), ...CUISINE_CATEGORIES];
 TYPE_CHIP_DEFS.forEach(c => {
   const chip = document.createElement('button');
   chip.type = 'button';
