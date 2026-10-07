@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Lounas - Tampereen ravintolat ja lounaslistat kartalla</title>
+<title>Lounas - ravintolat ja lounaslistat kartalla</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -775,6 +775,13 @@
     font-size: 12px;
     color: var(--muted);
   }
+  /* Kaupunkivalitsin on toistaiseksi PIILOSSA (testaus: ?kaupunki=helsinki tai poista tämä sääntö
+     DevToolsissa). Kun Helsinki on valmis, vaihda display: none -> display: flex. */
+  .city-picker { display: none; align-items: center; gap: 6px; margin-left: auto; font-size: 13px; color: var(--muted); }
+  .city-picker select {
+    font: inherit; color: var(--ink); background: #fff; border: 1px solid var(--line-strong);
+    border-radius: 8px; padding: 6px 8px; min-height: 32px;
+  }
   .chip-wrap {
     display: flex;
     flex-wrap: wrap;
@@ -969,6 +976,10 @@
         l-0.3,16.4c0,1,0.8,1.8,1.8,1.8c1,0,1.8-0.8,1.8-1.8L71.2,21z"/>
     </svg>
     <h1>Lounas</h1>
+  </div>
+  <div class="city-picker" id="cityPicker">
+    <label for="citySelect">Kaupunki</label>
+    <select id="citySelect"></select>
   </div>
   <button class="filter-btn" id="openFilter" aria-haspopup="dialog" aria-expanded="false">
     <svg class="filter-icon" viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -1171,9 +1182,51 @@ if (FIREBASE_ENABLED) {
 // Aja tämä oman backendin kautta, joka välimuistittaa vastaukset esim. tunniksi.
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
-// Koko Tampereen kattava kiinteä alue — haetaan kerran, kun sovellus avataan.
-// Ei sidottu näkyvään karttarajaukseen, joten pan/zoom ei enää koskaan laukaise uutta hakua.
-const TAMPERE_BBOX = { s: 61.435, w: 23.640, n: 61.560, e: 23.900 };
+// Alueet (kaupungit). Jokaisella on omat Firestore-kokoelmansa (ks. functions/index.js REGIONS ja
+// firestore.rules), oma välimuistinsa ja oma kiinteä hakualueensa, jonka kattava haku tehdään kerran
+// kun kaupunki avataan (ei sidottu näkyvään karttarajaukseen, joten pan/zoom ei laukaise uutta hakua).
+//  - nameGen:  kaupungin nimi genetiivissä (ilmoitukset: "Näytetään Helsingin ravintolat")
+//  - cacheKey: Tampere säilyttää alkuperäisen avaimen, jotta olemassa olevat välimuistit pysyvät voimassa
+const REGIONS = {
+  tampere: {
+    id: 'tampere', name: 'Tampere', nameGen: 'Tampereen',
+    center: [61.4978, 23.7610], zoom: 14,
+    bbox: { s: 61.435, w: 23.640, n: 61.560, e: 23.900 },
+    restaurantsCol: 'restaurants', dailyMenusCol: 'dailyMenus',
+    cacheKey: 'tampereLounasDataCache',
+  },
+  helsinki: {
+    id: 'helsinki', name: 'Helsinki', nameGen: 'Helsingin',
+    center: [60.1699, 24.9384], zoom: 14, // Rautatientori
+    bbox: { s: 60.155, w: 24.905, n: 60.182, e: 24.970 }, // ydinkeskusta + Ruoholahti
+    restaurantsCol: 'restaurants_helsinki', dailyMenusCol: 'dailyMenus_helsinki',
+    cacheKey: 'tampereLounasDataCache_helsinki',
+  },
+};
+const DEFAULT_REGION_ID = 'tampere';
+const REGION_STORAGE_KEY = 'lounasKaupunki';
+
+// Kaupunki tunnuksesta; tuntematon (tai esim. "__proto__") -> null
+function regionFromId(id) {
+  const key = String(id == null ? '' : id).trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(REGIONS, key) ? REGIONS[key] : null;
+}
+// Alkuvalinnan järjestys: 1) osoitteen ?kaupunki=... (vain tällä käynnillä, ei tallennu),
+// 2) selaimeen tallennettu oma valinta, 3) oletus (Tampere).
+function pickInitialRegion(search, stored) {
+  let fromUrl = null;
+  try { fromUrl = regionFromId(new URLSearchParams(search).get('kaupunki')); } catch (e) {}
+  return fromUrl || regionFromId(stored) || REGIONS[DEFAULT_REGION_ID];
+}
+// Osoite jossa ?kaupunki on asetettu; muut parametrit ja #-osa säilyvät
+function urlForRegion(href, id) {
+  const u = new URL(href);
+  u.searchParams.set('kaupunki', id);
+  return u.pathname + u.search + u.hash;
+}
+function loadStoredRegionId() { try { return localStorage.getItem(REGION_STORAGE_KEY); } catch (e) { return null; } }
+function saveRegionId(id) { try { localStorage.setItem(REGION_STORAGE_KEY, id); } catch (e) {} }
+let currentRegion = pickInitialRegion(window.location.search, loadStoredRegionId());
 
 let restaurants = [];
 let listFilterMode = 'visible'; // 'visible' | 'all'
@@ -1319,12 +1372,11 @@ function setLoadingBanner(state, text) {
 // 24h välimuisti: sama käyttäjä/selain ei hae Overpassista uudelleen jos data
 // on jo haettu viimeisen vuorokauden aikana. Kevennetään Overpassin kuormaa
 // merkittävästi, koska ravintolalistaus ei muutu tunneittain.
-const CACHE_KEY = 'tampereLounasDataCache';
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-function loadFromCache() {
+function loadFromCache(region = currentRegion) {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(region.cacheKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed.fetchedAt || !Array.isArray(parsed.restaurants)) return null;
@@ -1334,9 +1386,9 @@ function loadFromCache() {
     return null;
   }
 }
-function saveToCache(list) {
+function saveToCache(list, region = currentRegion) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), restaurants: list }));
+    localStorage.setItem(region.cacheKey, JSON.stringify({ fetchedAt: Date.now(), restaurants: list }));
   } catch (e) {}
 }
 
@@ -1347,8 +1399,8 @@ function saveToCache(list) {
 function sanitizeFirestoreId(id) { return id.replace(/\//g, '_'); }
 function unsanitizeFirestoreId(id) { return id.replace('_', '/'); } // vain ensimmäinen "_" -> "/"
 
-async function loadFromFirestore() {
-  const snap = await fbDb.collection('restaurants').get();
+async function loadFromFirestore(region = currentRegion) {
+  const snap = await fbDb.collection(region.restaurantsCol).get();
   if (snap.empty) return null;
   // Käytetään dokumentin OMAA "id"-kenttää (alkuperäinen "node/12345" -muoto),
   // ei Firestore-dokumentin sanitoitua ID:tä (doc.id, esim. "node_12345").
@@ -1391,10 +1443,12 @@ async function loadUserDataFromFirestore() {
 // keksittyä mock-dataa fallbackina - ks. lunchSummaryHtml alempana.
 let realDailyMenus = {};
 
-async function loadDailyMenusFromFirestore() {
+// Palauttaa kartan (ei aseta realDailyMenus:ia itse): kaupunkia vaihdettaessa vanhentuneen latauksen
+// tulos voidaan hylätä ennen kuin se ehtii korvata uuden kaupungin lounaslistat.
+async function loadDailyMenusFromFirestore(region = currentRegion) {
   try {
     const today = todayDateStr();
-    const snap = await fbDb.collection('dailyMenus').where('date', '==', today).get();
+    const snap = await fbDb.collection(region.dailyMenusCol).where('date', '==', today).get();
     const map = {};
     snap.forEach(doc => {
       const data = doc.data();
@@ -1402,10 +1456,10 @@ async function loadDailyMenusFromFirestore() {
       const originalId = unsanitizeFirestoreId(data.restaurantId);
       map[originalId] = data;
     });
-    realDailyMenus = map;
+    return map;
   } catch (err) {
     console.error('dailyMenus-haku epäonnistui, käytetään mock-lounaslistoja:', err);
-    realDailyMenus = {};
+    return {};
   }
 }
 
@@ -1466,7 +1520,26 @@ async function fetchOverpassWithMirrors(query) {
   throw lastErr;
 }
 
+// Kasvaa jokaisella latauskierroksella. Jos kaupunki vaihtuu kesken latauksen, vanhan kierroksen
+// tulokset hylätään (stale), jotta hitaammin valmistuva vanha lataus ei korvaa uuden kaupungin dataa
+// eikä koske latausbanneriin.
+let regionLoadSeq = 0;
+
 async function loadAllRestaurantsOnce() {
+  const region = currentRegion;
+  const seq = ++regionLoadSeq;
+  const stale = () => seq !== regionLoadSeq;
+  const apply = (list, menus) => {
+    restaurants = list;
+    realDailyMenus = menus;
+    rebuildMarkers();
+    applyFiltersToMap();
+    updateHeaderInfo();
+    renderList();
+    renderFavorites();
+    updateFavTabLabel();
+    setLoadingBanner('done');
+  };
   try {
     if (FIREBASE_ENABLED) {
       setLoadingBanner('loading');
@@ -1481,62 +1554,51 @@ async function loadAllRestaurantsOnce() {
         // (suosikit/arviot, EI kriittinen) rinnakkain niin ettei sen
         // epäonnistuminen enää kaada koko hakua kuten ennen.
         const [fromFirestore] = await Promise.all([
-          retryAsync(() => withTimeout(loadFromFirestore(), 15000, 'ravintolat'), 3, 'ravintolat'),
+          retryAsync(() => withTimeout(loadFromFirestore(region), 15000, 'ravintolat'), 3, 'ravintolat'),
           loadUserDataFromFirestore().catch((err) => {
             console.error('[lataus] käyttäjädatan haku epäonnistui (ei kriittinen):', err);
           }),
         ]);
+        if (stale()) return;
         if (fromFirestore) {
-          saveToCache(fromFirestore); // varalle: seuraavan epäonnistuneen haun jälkeen näytetään edes tämä
-          restaurants = fromFirestore;
-          await loadDailyMenusFromFirestore();
-          rebuildMarkers();
-          applyFiltersToMap();
-          updateHeaderInfo();
-          renderList();
-          renderFavorites();
-          updateFavTabLabel();
-          setLoadingBanner('done');
+          saveToCache(fromFirestore, region); // varalle: seuraavan epäonnistuneen haun jälkeen näytetään edes tämä
+          const menus = await loadDailyMenusFromFirestore(region);
+          if (stale()) return;
+          apply(fromFirestore, menus);
           return;
         }
         // Firestoressa ei vielä dataa (esim. syncRestaurants-funktiota ei ole
         // vielä ajettu kertaakaan) -> jatketaan alla olevaan Overpass-fallbackiin.
       } catch (err) {
+        if (stale()) return;
         console.error('Firestore-haku epäonnistui, käytetään Overpass-fallbackia:', err);
       }
     }
+    if (stale()) return;
 
-    const cached = loadFromCache();
+    const cached = loadFromCache(region);
     if (cached) {
-      restaurants = cached.restaurants.map(normalizeRestaurant);
-      if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
-      rebuildMarkers();
-      applyFiltersToMap();
-      updateHeaderInfo();
-      renderList();
-      renderFavorites();
-      updateFavTabLabel();
-      setLoadingBanner('done');
+      const list = cached.restaurants.map(normalizeRestaurant);
+      const menus = FIREBASE_ENABLED ? await loadDailyMenusFromFirestore(region) : {};
+      if (stale()) return;
+      apply(list, menus);
       return;
     }
 
     setLoadingBanner('loading');
     try {
-      const query = buildQuery(TAMPERE_BBOX);
+      const query = buildQuery(region.bbox);
       const data = await fetchOverpassWithMirrors(query);
-      restaurants = data.elements
+      if (stale()) return;
+      const list = data.elements
         .map(elementToRestaurant)
         .filter(r => r.lat && r.lon);
-      saveToCache(restaurants);
-      if (FIREBASE_ENABLED) await loadDailyMenusFromFirestore();
-      rebuildMarkers();
-      applyFiltersToMap();
-      updateHeaderInfo();
-      renderList();
-      renderFavorites();
-      updateFavTabLabel();
-      setLoadingBanner('done');
+      saveToCache(list, region);
+      const menus = FIREBASE_ENABLED ? await loadDailyMenusFromFirestore(region) : {};
+      if (stale()) return;
+      apply(list, menus);
     } catch (err) {
+      if (stale()) return;
       console.error('[lataus] kaikki hakureitit epäonnistuivat (Firestore, välimuisti, Overpass):', err);
       setLoadingBanner('error', 'Ravintoloiden haku epäonnistui.');
     }
@@ -1545,6 +1607,7 @@ async function loadAllRestaurantsOnce() {
     // odottamattoman virheen jota sisempi try/catch ei jo käsitellyt,
     // varmistetaan silti ettei latausbanneri jää ikuisesti jumiin "Haetaan..."
     // -tilaan.
+    if (stale()) return;
     console.error('Odottamaton virhe ravintoloiden latauksessa:', outerErr);
     setLoadingBanner('error', 'Ravintoloiden haku epäonnistui.');
   }
@@ -2458,7 +2521,7 @@ function getCommunityCount(id) {
   return (r.seedCount || 0) + (r.realRatingCount || 0);
 }
 
-const map = L.map('map', { zoomControl: false }).setView([61.4978, 23.7610], 14);
+const map = L.map('map', { zoomControl: false }).setView(currentRegion.center, currentRegion.zoom);
 // 3.1.2 / 2.4.6: Leafletin oletusnimet ("Zoom in") ovat englantia suomenkielisellä sivulla
 L.control.zoom({ zoomInTitle: 'Lähennä karttaa', zoomOutTitle: 'Loitonna karttaa' }).addTo(map);
 map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
@@ -2898,11 +2961,14 @@ function setRating(id, val) {
   const newVal = (val === prev) ? 0 : val; // sama tähti uudelleen -> nollataan oma arvio
 
   if (FIREBASE_ENABLED) {
-    // Kirjoitetaan VAIN oma arvio Firestoreen — Cloud Function (onRatingWrite)
+    // Kirjoitetaan VAIN oma arvio Firestoreen — Cloud Function (onRatingWrite / onRatingWriteHelsinki)
     // laskee realRatingSum/realRatingCount-aggregaatin palvelinpuolella
     // luotettavasti, asiakas ei koskaan itse kirjoita niitä (ks. firestore.rules).
+    // Kokoelma luetaan HETI (ei vasta fbReady:n jälkeen): jos kaupunki vaihtuu sillä välin,
+    // arvio menee silti sen kaupungin kokoelmaan jossa ravintolaa katsottiin.
+    const ratingsRestaurantsCol = currentRegion.restaurantsCol;
     fbReady.then(() => {
-      const ref = fbDb.collection('restaurants').doc(sanitizeFirestoreId(id)).collection('ratings').doc(fbUid);
+      const ref = fbDb.collection(ratingsRestaurantsCol).doc(sanitizeFirestoreId(id)).collection('ratings').doc(fbUid);
       const write = newVal > 0
         ? ref.set({ rating: newVal, userId: fbUid, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
         : ref.delete();
@@ -3352,6 +3418,62 @@ document.getElementById('filterReset').onclick = () => {
   renderList();
   renderFavorites();
 };
+
+// ---------------------------------------------------------------------------
+// Kaupungin valinta. Valitsin (#citySelect) on toistaiseksi piilotettu CSS:llä; vaihto onnistuu
+// osoitteella ?kaupunki=helsinki tai DevToolsissa. Valinta tallentuu selaimeen vain kun käyttäjä
+// itse vaihtaa sen valitsimesta (osoitteen parametri vaikuttaa vain sillä käynnillä), eikä kaupunki
+// koskaan vaihdu itsestään.
+// ---------------------------------------------------------------------------
+const citySelect = document.getElementById('citySelect');
+function buildCitySelect() {
+  citySelect.innerHTML = '';
+  Object.values(REGIONS).forEach(r => {
+    const o = document.createElement('option');
+    o.value = r.id;
+    o.textContent = r.name;
+    citySelect.appendChild(o);
+  });
+  citySelect.value = currentRegion.id;
+}
+
+function switchRegion(id) {
+  const next = regionFromId(id);
+  if (!next) { citySelect.value = currentRegion.id; return; }
+  if (next === currentRegion) { citySelect.value = next.id; return; }
+  currentRegion = next;
+  citySelect.value = next.id;
+  saveRegionId(next.id);
+  try { history.replaceState(history.state, '', urlForRegion(window.location.href, next.id)); } catch (e) {}
+
+  // Edellisen kaupungin tila pois: valinta, avoin paneeli, nimihaku ja suodattimet (muuten lista
+  // voisi jäädä tyhjäksi vanhan suodattimen takia). Fokusta ei siirretä minnekään (3.2.2).
+  closeMobileSheet(true);
+  clearSelection();
+  clearTimeout(nameSearchTimer);
+  nameSearchInput.value = '';
+  searchClearBtn.classList.remove('visible');
+  nameQuery = '';
+  document.getElementById('filterReset').onclick();
+  restaurants = [];
+  realDailyMenus = {};
+  autoOpenedLunchId = null;
+  rebuildMarkers();
+  updateHeaderInfo();
+  renderList();
+  renderFavorites();
+  updateFavTabLabel();
+  map.setView(next.center, next.zoom, { animate: false });
+
+  loadAllRestaurantsOnce().then(() => {
+    // Ilmoitus vain jos tämä on yhä valittu kaupunki ja haku onnistui
+    if (currentRegion === next && restaurants.length > 0) {
+      announce(`Näytetään ${next.nameGen} ravintolat, ${restaurants.length} kpl`);
+    }
+  });
+}
+citySelect.addEventListener('change', () => switchRegion(citySelect.value));
+buildCitySelect();
 
 showTab('map');
 showSidebarTab('list');
