@@ -1356,18 +1356,21 @@ const CUISINE_CATEGORIES = [
   { label: "Espanjalainen", match: ["spanish"], group: "nationality" },
   { label: "Eurooppalainen", match: ["european"], group: "nationality" },
   { label: "Fine dining", match: ["fine_dining"], group: "style" },
+  { label: "Grilli", match: ["sausage", "hot_dog"], group: "style" }, // suomalainen grillikioski (makkara, lihapiirakka)
   { label: "Hampurilainen", match: ["burger"], group: "style" },
   { label: "Intialainen", match: ["indian"], group: "nationality" },
   { label: "Italialainen", match: ["italian"], group: "nationality" },
   { label: "Japanilainen", match: ["japanese", "sushi"], group: "nationality" },
   { label: "Kahvila", match: ["coffee_shop"], amenity: "cafe", group: "style" },
   { label: "Kansainvälinen", match: ["international"], group: "style" },
+  { label: "Kebab", match: ["kebab"], group: "style" },
   { label: "Kiinalainen", match: ["chinese", "cantonese", "sichuanese"], group: "nationality" },
   { label: "Lähi-Itä", match: ["middle_eastern", "lebanese", "arab", "syrian"], group: "nationality" },
   { label: "Nepalilainen", match: ["nepalese"], group: "nationality" },
   { label: "Marokkolainen", match: ["moroccan"], group: "nationality" },
   { label: "Meksikolainen", match: ["mexican", "tex-mex"], group: "nationality" },
   { label: "Moderni", match: ["modern", "fusion"], group: "style" },
+  { label: "Noodle", match: ["noodle", "ramen"], group: "style" },
   { label: "Etninen", match: ["ethnic"], group: "style" },
   { label: "Perinteinen", match: ["regional", "traditional"], group: "style" },
   { label: "Pikaruoka", match: ["fast_food"], amenity: "fast_food", group: "style" },
@@ -2881,7 +2884,7 @@ function normalizeUrl(url) {
 
 function websiteLinkHtml(r) {
   if (!r.website) return '';
-  return `<a class="website-link" data-fk="link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Verkkosivusto<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
+  return `<a class="website-link" data-fk="link" href="${normalizeUrl(r.website)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Sivusto<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu uuteen välilehteen)</span></a>`;
 }
 
 // Ravintolan nimi/tyyppi/osoite tulevat OpenStreetMapista (kuka tahansa voi
