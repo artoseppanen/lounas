@@ -815,6 +815,15 @@
      mainos on ladattu sisään (yläreunassa, pienellä). Kun AdSense-tili on hyväksytty: korvaa
      .ad-slot-inner-sisältö <ins class="adsbygoogle">-tagilla (ks. kommentti JS-osiossa). */
   .ad-slot[hidden] { display: none; }
+  /* Pieni, hillitty tietosuojalinkki listan ja suosikkien lopussa (näkyy vasta kun vierittää loppuun) */
+  .list-footer-link {
+    display: block;
+    text-align: center;
+    padding: 10px 8px 18px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .list-footer-link a { color: var(--muted); text-decoration: underline; }
   .ad-slot {
     margin: 14px 0 4px;
     padding: 4px;
@@ -893,6 +902,7 @@
     line-height: 1.5;
     color: var(--ink);
   }
+  .cookie-banner-text a { color: var(--link-blue); }
   .cookie-banner-actions {
     display: flex;
     align-items: center;
@@ -1249,6 +1259,7 @@
           <span class="ad-slot-label">Mainos</span>
           <div class="ad-slot-inner"></div>
         </div>
+        <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietosuoja</a></p>
       </div>
 
       <div id="favView" role="tabpanel" aria-labelledby="sbTabFav">
@@ -1257,6 +1268,7 @@
           <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunchFav">Avaa lounaslistat</button>
         </div>
         <div id="favCards"></div>
+        <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietosuoja</a></p>
       </div>
     </div>
   </div>
@@ -1289,7 +1301,7 @@
      pakollisen kaupunkivalinnan kanssa), katso JS: maybeShowCookieBanner(). -->
 <div class="cookie-banner" id="cookieBanner" role="region" aria-label="Evästeet" hidden>
   <div class="cookie-banner-inner">
-    <p class="cookie-banner-text">Käytämme evästeitä mainonnan näyttämiseen. Hyväksymällä sallit mainosevästeet.</p>
+    <p class="cookie-banner-text">Käytämme evästeitä mainonnan näyttämiseen. Hyväksymällä sallit mainosevästeet. <a href="privacy.html" target="_blank" rel="noopener noreferrer">Lue lisää</a>.</p>
     <div class="cookie-banner-actions">
       <button type="button" class="cookie-decline" id="cookieDecline">Hylkää</button>
       <button type="button" class="cookie-accept" id="cookieAccept">Hyväksy</button>
