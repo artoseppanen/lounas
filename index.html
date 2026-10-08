@@ -808,6 +808,110 @@
     background-size: 10px 6px;
     cursor: pointer;
   }
+  /* Mainospaikat (listan loppu, suodatinpaneeli). Tyhjä säiliö varaa tilan jo nyt, jotta
+     AdSense-yksikön lisääminen myöhemmin ei hyppäytä sisältöä (CLS). Korkeus mukailee AdSensen
+     yleisiä responsiivisia kokoja: kapealla näytöllä matalampi banneri, leveämmällä neliö/suorakaide.
+     "Mainos"-teksti on W3C/kuluttajansuojan vaatima merkintä ja pysyy näkyvissä myös kun oikea
+     mainos on ladattu sisään (yläreunassa, pienellä). Kun AdSense-tili on hyväksytty: korvaa
+     .ad-slot-inner-sisältö <ins class="adsbygoogle">-tagilla (ks. kommentti JS-osiossa). */
+  .ad-slot {
+    margin: 14px 0 4px;
+    padding: 4px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 12px;
+    background: #fff;
+  }
+  .ad-slot-label {
+    display: block;
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    margin: 0 0 4px;
+  }
+  .ad-slot-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--muted);
+    font-size: 12.5px;
+    text-align: center;
+    padding: 8px;
+  }
+  @media (min-width: 460px) {
+    .ad-slot-inner { min-height: 250px; } /* AdSensen "medium rectangle" -kokoluokka */
+  }
+  #listCards + .ad-slot { margin-bottom: 18px; }
+
+  /* Evästesuostumuspalkki: täysleveä, kiinteä alareunassa, ei voi ohittaa vastaamatta (ei X-nappia,
+     ei sulkeudu taustaa napauttamalla). EI moderni/juridisesti täysi CMP - vain yksinkertainen
+     kyllä/ei-kysely AdSensen MAINOSEVÄSTEILLE. Jos EU-liikennettä tulee paljon, Google vaatii
+     tuotantokäytössä sertifioidun CMP:n (esim. Funding Choices) tämän tilalle ennen mainosten
+     aktivointia. Näkyy vasta kun kaupunki on valittu (ei yhtä aikaa pakollisen kaupunkivalinnan
+     kanssa), eikä ole natiivi <dialog> koska se EI estä muun sivun käyttöä - vain pysyy näkyvissä
+     kunnes käyttäjä vastaa. */
+  .cookie-banner {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 2000; /* yli bottom-nav (1000) ja mobiilipaneelin (950) ajan, kunnes vastataan */
+    background: var(--paper);
+    border-top: 1px solid var(--line-strong);
+    box-shadow: 0 -6px 20px rgba(28,43,36,0.12);
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+  }
+  .cookie-banner[hidden] { display: none; }
+  .cookie-banner-text {
+    flex: 1 1 260px;
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink);
+  }
+  .cookie-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .cookie-accept {
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    min-height: 40px;
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .cookie-accept:hover { background: #2c4136; }
+  .cookie-decline {
+    border: none;
+    background: none;
+    padding: 8px 2px;
+    min-height: 24px;
+    color: var(--link-blue);
+    font-size: 13.5px;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  @media (max-width: 480px) {
+    .cookie-banner { flex-direction: column; align-items: stretch; }
+    /* flex-direction muuttuu pystysuoraksi, jolloin flex-basis (260px) tulkittaisiin korkeudeksi
+       leveyden sijaan - nollataan se, jotta teksti ei venytä palkkia turhan korkeaksi. */
+    .cookie-banner-text { flex: 0 0 auto; }
+    .cookie-banner-actions { margin-left: 0; justify-content: space-between; }
+  }
+
   /* Kaupungin valintaruutu ensimmäisellä käynnillä: pakollinen modaali (natiivi <dialog>), jota ei voi
      sulkea ilman valintaa. Älä aseta .city-dialog:lle display-arvoa: suljettu dialog on display:none. */
   .city-dialog {
@@ -1114,6 +1218,10 @@
           <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunch">Avaa lounaslistat</button>
         </div>
         <div id="listCards"></div>
+        <div class="ad-slot" id="adSlotList" aria-hidden="true">
+          <span class="ad-slot-label">Mainos</span>
+          <div class="ad-slot-inner">Mainospaikka (AdSense ei vielä käytössä)</div>
+        </div>
       </div>
 
       <div id="favView" role="tabpanel" aria-labelledby="sbTabFav">
@@ -1149,6 +1257,16 @@
 
 <!-- 4.1.3: tilaviestit ruudunlukijalle (suosikit, arviot, hakutulosten määrä, suodatuksen tulos) -->
 <div id="liveStatus" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Evästesuostumuspalkki mainosevästeille. Näytetään vasta kun kaupunki on valittu (ei yhtä aikaa
+     pakollisen kaupunkivalinnan kanssa), katso JS: maybeShowCookieBanner(). -->
+<div class="cookie-banner" id="cookieBanner" role="region" aria-label="Evästeet" hidden>
+  <p class="cookie-banner-text">Käytämme evästeitä mainonnan näyttämiseen. Hyväksymällä sallit mainosevästeet.</p>
+  <div class="cookie-banner-actions">
+    <button type="button" class="cookie-decline" id="cookieDecline">Hylkää</button>
+    <button type="button" class="cookie-accept" id="cookieAccept">Hyväksy</button>
+  </div>
+</div>
 
 <!-- Kaupungin valinta ensimmäisellä käynnillä (ei tunnettua kaupunkia osoitteessa tai selaimessa).
      Natiivi modaali: tausta on inertti ja Tab pysyy dialogissa. Ei sulkemispainiketta eikä Esc-sulkua,
@@ -1204,6 +1322,10 @@
       <h4 class="filter-subheading">Kansallisuuspohjaiset</h4>
       <div class="chip-wrap" id="typeChipsNationality"></div>
     </div>
+  </div>
+  <div class="ad-slot" id="adSlotFilter" aria-hidden="true">
+    <span class="ad-slot-label">Mainos</span>
+    <div class="ad-slot-inner">Mainospaikka (AdSense ei vielä käytössä)</div>
   </div>
   <div class="filter-footer">
     <button id="filterReset">Tyhjennä</button>
@@ -3606,6 +3728,48 @@ buildCitySelect();
 // cancel-eston jälkeen, joten close-tapahtumassa avataan ruutu uudelleen jos valintaa ei ole tehty.
 // Dataa ei ladata ennen valintaa (loadAllRestaurantsOnce käynnistyy vasta startWithRegionissa).
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Evästesuostumus (mainosevästeet). Näytetään vasta kun kaupunki on tiedossa - ei yhtä aikaa
+// pakollisen kaupunkivalinnan kanssa, jotta käyttäjä vastaa yhteen kysymykseen kerrallaan.
+// Tämä on tarkoituksella YKSINKERTAINEN kyllä/ei-palkki, ei täysi CMP: kun AdSense-tili on
+// hyväksytty ja EU-liikennettä on paljon, Google saattaa vaatia sertifioidun CMP:n tilalle.
+// ---------------------------------------------------------------------------
+const AD_CONSENT_KEY = 'lounasAdConsent';
+const cookieBanner = document.getElementById('cookieBanner');
+
+function getAdConsent() { try { return localStorage.getItem(AD_CONSENT_KEY); } catch (e) { return null; } }
+function setAdConsent(v) { try { localStorage.setItem(AD_CONSENT_KEY, v); } catch (e) {} }
+
+function showCookieBanner() { cookieBanner.hidden = false; }
+function hideCookieBanner() { cookieBanner.hidden = true; }
+
+// Kutsutaan kaupungin valinnan jälkeen (joko heti käynnistyksessä, tai kaupunkidialogin
+// sulkeuduttua). Ei näytä palkkia uudelleen jos käyttäjä on jo vastannut kerran.
+function maybeShowCookieBanner() {
+  if (getAdConsent()) return;
+  showCookieBanner();
+}
+
+// TODO (kun AdSense-tili on hyväksytty ja mainosyksiköt luotu): lisää tähän AdSensen <script>-tagin
+// lisäys DOMiin ja (adsbygoogle = window.adsbygoogle || []).push({}) -kutsu KUMMALLEKIN mainospaikalle
+// (#adSlotList, #adSlotFilter), mutta VAIN jos getAdConsent() === 'granted'. Ei vielä toteutettu,
+// koska tiliä ei vielä ole hyväksytty eikä mainosyksiköiden slot-ID:itä ole.
+function loadAdsIfConsented() {
+  if (getAdConsent() !== 'granted') return;
+  // ei vielä mitään ladattavaa
+}
+
+document.getElementById('cookieAccept').onclick = () => {
+  setAdConsent('granted');
+  hideCookieBanner();
+  loadAdsIfConsented();
+};
+document.getElementById('cookieDecline').onclick = () => {
+  setAdConsent('denied');
+  hideCookieBanner();
+};
+if (getAdConsent() === 'granted') loadAdsIfConsented();
+
 const cityDialog = document.getElementById('cityDialog');
 function openCityDialog() {
   if (!cityDialog.open) cityDialog.showModal();
@@ -3627,6 +3791,7 @@ function startWithRegion(id) {
       announce(`Näytetään ${chosen.nameGen} ravintolat, ${restaurants.length} kpl`);
     }
   });
+  maybeShowCookieBanner();
 }
 cityDialog.querySelectorAll('.city-choice').forEach((btn) => {
   btn.addEventListener('click', () => startWithRegion(btn.dataset.city));
@@ -3642,6 +3807,7 @@ renderList();
 updateFavTabLabel();
 if (!regionPending) {
   loadAllRestaurantsOnce();
+  maybeShowCookieBanner();
 } else if (typeof cityDialog.showModal === 'function') {
   openCityDialog();
 } else {
@@ -3649,6 +3815,7 @@ if (!regionPending) {
   // (valitsin on silti näkyvissä otsikossa).
   regionPending = false;
   loadAllRestaurantsOnce();
+  maybeShowCookieBanner();
 }
 </script>
 </body>
