@@ -1268,6 +1268,10 @@
           <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunchFav">Avaa lounaslistat</button>
         </div>
         <div id="favCards"></div>
+        <div class="ad-slot" id="adSlotFav" hidden>
+          <span class="ad-slot-label">Mainos</span>
+          <div class="ad-slot-inner"></div>
+        </div>
         <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietosuoja</a></p>
       </div>
     </div>
@@ -3493,7 +3497,7 @@ function showTab(which) {
 
   if (which === 'map') setTimeout(() => map.invalidateSize(), 50);
   if (which === 'list') renderList();
-  if (which === 'fav') renderFavorites();
+  if (which === 'fav') { renderFavorites(); maybeRenderFavAd(); }
 }
 document.getElementById('tabMap').onclick = () => showTab('map');
 document.getElementById('tabList').onclick = () => showTab('list');
@@ -3512,7 +3516,7 @@ function showSidebarTab(which) {
   document.getElementById('listView').classList.toggle('d-active', which === 'list');
   document.getElementById('favView').classList.toggle('d-active', which === 'fav');
   if (which === 'list') renderList();
-  if (which === 'fav') renderFavorites();
+  if (which === 'fav') { renderFavorites(); maybeRenderFavAd(); }
 }
 document.getElementById('sbTabList').onclick = () => showSidebarTab('list');
 document.getElementById('sbTabFav').onclick = () => showSidebarTab('fav');
@@ -3821,6 +3825,7 @@ const ADSENSE_CLIENT = 'ca-pub-1115447221706239';
 const ADSENSE_SLOTS = {
   adSlotList: '2148000151',    // "Listamainos"
   adSlotFilter: '9675047091',  // "Suodattimien mainos"
+  adSlotFav: '2416252608',     // "Suosikkien mainos"
 };
 
 let adSenseScriptPromise = null;
@@ -3869,6 +3874,17 @@ function renderAdUnit(containerId, slotId) {
 function loadAdsIfConsented() {
   if (getAdConsent() !== 'granted') return;
   loadAdSenseScript().then(() => renderAdUnit('adSlotList', ADSENSE_SLOTS.adSlotList));
+}
+
+// Suosikkien mainos: vasta kun Suosikit-välilehti avataan (sama syy kuin suodatinmainoksessa: ei
+// pyydetä piilotettuun säiliöön) JA vain jos suosikkeja on vähintään yksi - tyhjä suosikkilista,
+// jossa näkyisi pelkkä mainos, rikkoisi Googlen "riittämätön sisältö" -käytäntöä. Kutsutaan joka
+// kerta kun välilehti avataan (ks. showTab ja showSidebarTab), jotta mainos ilmestyy heti kun
+// ensimmäinen suosikki on lisätty, vaikka välilehteä olisi jo aiemmin katsottu tyhjänä.
+function maybeRenderFavAd() {
+  if (getAdConsent() !== 'granted') return;
+  if (!restaurants.some((r) => isFav(r.id))) return;
+  loadAdSenseScript().then(() => renderAdUnit('adSlotFav', ADSENSE_SLOTS.adSlotFav));
 }
 
 document.getElementById('cookieAccept').onclick = () => {
