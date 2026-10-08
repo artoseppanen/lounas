@@ -821,6 +821,17 @@
     border: 1px dashed var(--line-strong);
     border-radius: 12px;
     background: #fff;
+    /* Eristys mainosverkon koodia vastaan: joskus mainosskripti luo position:fixed- tai ylisuuren
+       elementin (esim. klikkausten mittaukseen), joka ilman tätä voisi levitä koko sivun päälle ja
+       napata hiiren tapahtumat kartalta/sivupalkista. transform luo "containing blockin" fixed-
+       sijoitetuille lapsielementeille (CSS-spesifikaatio), joten ne eivät voi enää sijoittua
+       ikkunan suhteen vaan tämän laatikon suhteen; overflow+contain leikkaa kaiken tämän laatikon
+       ulkopuolelle piirtyvän. Ei vaikuta itse mainoksen näkymiseen, vain sen "karkaamiseen".*/
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    contain: layout paint;
+    transform: translateZ(0);
   }
   .ad-slot-label {
     display: block;
@@ -924,7 +935,8 @@
       margin-left: 0;
       width: 100%;
     }
-    .cookie-accept { width: 100%; min-width: 0; }
+    /* Vain visuaalinen järjestys: Hyväksy ylimmäksi. Fokusjärjestys (Hylkää ensin DOM:ssa) ei muutu. */
+    .cookie-accept { width: 100%; min-width: 0; order: -1; }
   }
 
   /* Kaupungin valintaruutu ensimmäisellä käynnillä: pakollinen modaali (natiivi <dialog>), jota ei voi
@@ -1339,10 +1351,10 @@
       <h4 class="filter-subheading">Kansallisuuspohjaiset</h4>
       <div class="chip-wrap" id="typeChipsNationality"></div>
     </div>
-  </div>
-  <div class="ad-slot" id="adSlotFilter" hidden>
-    <span class="ad-slot-label">Mainos</span>
-    <div class="ad-slot-inner"></div>
+    <div class="ad-slot" id="adSlotFilter" hidden>
+      <span class="ad-slot-label">Mainos</span>
+      <div class="ad-slot-inner"></div>
+    </div>
   </div>
   <div class="filter-footer">
     <button id="filterReset">Tyhjennä</button>
@@ -1385,11 +1397,29 @@ if (FIREBASE_ENABLED) {
 
   // App Check: suojaa Firestore/Functions-kutsut niin että ne hyväksytään
   // vain tästä oikeasta sivustosta, ei käsin kirjoitetuista skripteistä.
-  // Täytä RECAPTCHA_SITE_KEY reCAPTCHA v3:n Site keylläsi (google.com/recaptcha/admin).
+  //
+  // HUOM (2026): Google on lopettanut UUSIEN sovellusten rekisteröinnin vanhalla "reCAPTCHA
+  // Classic" (v3) -tavalla App Checkissä - uudet rekisteröinnit ohjataan "Fraud Defense"-palveluun
+  // (entinen reCAPTCHA Enterprise). Tämä vaatii TOISENLAISEN avaimen kuin ennen:
+  //   1. Google Cloud Console -> Security -> Fraud Defense -> luo "score-based" reCAPTCHA-avain
+  //      sivustosi domaineille (ei recaptcha.google.com/admin, vaan GCP:n oma Fraud Defense -sivu).
+  //   2. Täytä SITE KEY (ei secret key - Enterprise ei käytä sitä tässä kohtaa) alle.
+  //   3. Firebase Console -> App Check -> rekisteröi sovellus "Fraud Defense"-tarjoajalla samalla
+  //      site keyllä.
   // isTokenAutoRefreshEnabled:true pitää App Check -tokenin voimassa koko istunnon ajan.
-  const RECAPTCHA_SITE_KEY = "6Lci1tMtAAAAAFhhWAblQtruGJU0fsdBFI8vLetg";
-  if (RECAPTCHA_SITE_KEY !== "YOUR_RECAPTCHA_SITE_KEY") {
-    firebase.appCheck().activate(RECAPTCHA_SITE_KEY, true);
+  const RECAPTCHA_ENTERPRISE_SITE_KEY = "6LcD_uQtAAAAAIVnzJw5pi_yTS65FXpGRiEo2JIV";
+  if (RECAPTCHA_ENTERPRISE_SITE_KEY !== "YOUR_RECAPTCHA_ENTERPRISE_SITE_KEY") {
+    // Suojaus: jos jokin (mainostenestäjä, vanha SDK-versio, verkkovirhe) estää App Check -skriptin
+    // tai ReCaptchaEnterpriseProvider puuttuu, tämä EI SAA kaataa koko sovellusta käynnistyksessä
+    // (yksi kiinniottamaton virhe tässä tiedoston alussa pysäyttäisi kaiken loppukoodin suorituksen).
+    try {
+      firebase.appCheck().activate(
+        new firebase.appCheck.ReCaptchaEnterpriseProvider(RECAPTCHA_ENTERPRISE_SITE_KEY),
+        true
+      );
+    } catch (err) {
+      console.error('App Checkin alustus epäonnistui (sovellus jatkaa silti):', err);
+    }
   }
 
   fbAuth = firebase.auth();
@@ -3802,6 +3832,14 @@ function loadAdSenseScript() {
 // pyytää AdSenseltä mainoksen (push). "Mainos"-otsikkolabel (.ad-slot-label) jätetään paikalleen.
 // Kutsutaan vain kerran per säiliö (dataset.adRendered-lipulla), ettei samaa yksikköä pyydetä
 // moneen kertaan jos loadAdsIfConsented ajetaan useasti (esim. hyväksyntä + sivun oma käynnistys).
+// TESTI: data-ad-format="auto" + data-full-width-responsive="true" (Googlen oma oletuskoodi) on
+// tunnetusti altis "resize-silmukalle" joustavissa flexbox-säiliöissä: mainos mittaa säiliön,
+// säiliö reagoi, mainos mittaa uudelleen - loputtomasti. Tämä näkyi DevToolsin "Forced reflow" /
+// "requestAnimationFrame"-varoituksina VASTA mainosten latauduttua, ja selittäisi miksi klikkaukset
+// ja vieritys tuntuivat jumiutuvan. Kiinteä koko (300x250, "Medium Rectangle") ei tarvitse jatkuvaa
+// mittausneuvottelua säiliön kanssa, joten silmukka ei voi syntyä. Jos tämä korjaa ongelman, pidetään
+// kiinteä koko; jos ei, vika on muualla ja tämän voi vaihtaa takaisin responsiiviseksi.
+const AD_FIXED_SIZE = { width: 300, height: 250 };
 function renderAdUnit(containerId, slotId) {
   if (!slotId) return; // ei vielä slot-ID:tä tälle paikalle
   const container = document.getElementById(containerId);
@@ -3809,7 +3847,7 @@ function renderAdUnit(containerId, slotId) {
   if (!inner || container.dataset.adRendered) return;
   container.dataset.adRendered = 'true';
   container.hidden = false; // säiliö pitää olla näkyvissä ENNEN push():ia, muuten leveys on 0
-  inner.innerHTML = `<ins class="adsbygoogle" style="display:block;width:100%" data-ad-client="${ADSENSE_CLIENT}" data-ad-slot="${slotId}" data-ad-format="auto" data-full-width-responsive="true"></ins>`;
+  inner.innerHTML = `<ins class="adsbygoogle" style="display:inline-block;width:${AD_FIXED_SIZE.width}px;height:${AD_FIXED_SIZE.height}px" data-ad-client="${ADSENSE_CLIENT}" data-ad-slot="${slotId}"></ins>`;
   try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error('AdSense-mainoksen pyyntö epäonnistui:', e); }
 }
 
