@@ -814,6 +814,7 @@
      "Mainos"-teksti on W3C/kuluttajansuojan vaatima merkintä ja pysyy näkyvissä myös kun oikea
      mainos on ladattu sisään (yläreunassa, pienellä). Kun AdSense-tili on hyväksytty: korvaa
      .ad-slot-inner-sisältö <ins class="adsbygoogle">-tagilla (ks. kommentti JS-osiossa). */
+  .ad-slot[hidden] { display: none; }
   .ad-slot {
     margin: 14px 0 4px;
     padding: 4px;
@@ -861,13 +862,19 @@
     background: var(--paper);
     border-top: 1px solid var(--line-strong);
     box-shadow: 0 -6px 20px rgba(28,43,36,0.12);
-    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: 22px 20px calc(22px + env(safe-area-inset-bottom, 0px));
+  }
+  .cookie-banner[hidden] { display: none; }
+  /* Sisältö keskitetään ja rajataan 800px:iin, jottei Hyväksy-nappi jää kauas tekstistä
+     leveillä näytöillä. Itse palkki (yllä) pysyy koko ruudun levyisenä (tausta, reunaviiva). */
+  .cookie-banner-inner {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px 18px;
+    gap: 14px 28px;
+    max-width: 800px;
+    margin: 0 auto;
   }
-  .cookie-banner[hidden] { display: none; }
   .cookie-banner-text {
     flex: 1 1 260px;
     margin: 0;
@@ -885,11 +892,12 @@
   .cookie-accept {
     border: none;
     border-radius: 999px;
-    padding: 10px 22px;
-    min-height: 40px;
+    padding: 12px 40px;
+    min-width: 180px;
+    min-height: 44px;
     background: var(--ink);
     color: var(--paper);
-    font-size: 13.5px;
+    font-size: 14.5px;
     font-weight: 600;
     cursor: pointer;
   }
@@ -901,15 +909,22 @@
     min-height: 24px;
     color: var(--link-blue);
     font-size: 13.5px;
-    text-decoration: underline;
+    text-decoration: none;
     cursor: pointer;
   }
   @media (max-width: 480px) {
-    .cookie-banner { flex-direction: column; align-items: stretch; }
+    .cookie-banner-inner { flex-direction: column; align-items: stretch; text-align: center; }
     /* flex-direction muuttuu pystysuoraksi, jolloin flex-basis (260px) tulkittaisiin korkeudeksi
        leveyden sijaan - nollataan se, jotta teksti ei venytä palkkia turhan korkeaksi. */
     .cookie-banner-text { flex: 0 0 auto; }
-    .cookie-banner-actions { margin-left: 0; justify-content: space-between; }
+    .cookie-banner-actions {
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-left: 0;
+      width: 100%;
+    }
+    .cookie-accept { width: 100%; min-width: 0; }
   }
 
   /* Kaupungin valintaruutu ensimmäisellä käynnillä: pakollinen modaali (natiivi <dialog>), jota ei voi
@@ -1218,9 +1233,9 @@
           <button type="button" class="toggle-all-lunch-btn" id="toggleAllLunch">Avaa lounaslistat</button>
         </div>
         <div id="listCards"></div>
-        <div class="ad-slot" id="adSlotList" aria-hidden="true">
+        <div class="ad-slot" id="adSlotList" hidden>
           <span class="ad-slot-label">Mainos</span>
-          <div class="ad-slot-inner">Mainospaikka (AdSense ei vielä käytössä)</div>
+          <div class="ad-slot-inner"></div>
         </div>
       </div>
 
@@ -1261,10 +1276,12 @@
 <!-- Evästesuostumuspalkki mainosevästeille. Näytetään vasta kun kaupunki on valittu (ei yhtä aikaa
      pakollisen kaupunkivalinnan kanssa), katso JS: maybeShowCookieBanner(). -->
 <div class="cookie-banner" id="cookieBanner" role="region" aria-label="Evästeet" hidden>
-  <p class="cookie-banner-text">Käytämme evästeitä mainonnan näyttämiseen. Hyväksymällä sallit mainosevästeet.</p>
-  <div class="cookie-banner-actions">
-    <button type="button" class="cookie-decline" id="cookieDecline">Hylkää</button>
-    <button type="button" class="cookie-accept" id="cookieAccept">Hyväksy</button>
+  <div class="cookie-banner-inner">
+    <p class="cookie-banner-text">Käytämme evästeitä mainonnan näyttämiseen. Hyväksymällä sallit mainosevästeet.</p>
+    <div class="cookie-banner-actions">
+      <button type="button" class="cookie-decline" id="cookieDecline">Hylkää</button>
+      <button type="button" class="cookie-accept" id="cookieAccept">Hyväksy</button>
+    </div>
   </div>
 </div>
 
@@ -1323,9 +1340,9 @@
       <div class="chip-wrap" id="typeChipsNationality"></div>
     </div>
   </div>
-  <div class="ad-slot" id="adSlotFilter" aria-hidden="true">
+  <div class="ad-slot" id="adSlotFilter" hidden>
     <span class="ad-slot-label">Mainos</span>
-    <div class="ad-slot-inner">Mainospaikka (AdSense ei vielä käytössä)</div>
+    <div class="ad-slot-inner"></div>
   </div>
   <div class="filter-footer">
     <button id="filterReset">Tyhjennä</button>
@@ -3630,6 +3647,11 @@ function openFilterPanel() {
   const overlay = document.getElementById('filterOverlay');
   overlay.removeAttribute('hidden');
   overlay.classList.add('open');
+  // Suodatinmainos vasta nyt kun paneeli on näkyvissä (ks. kommentti loadAdsIfConsented-funktion
+  // yhteydessä). loadAdSenseScript ja renderAdUnit ovat sisäisesti kertakäyttöisiä.
+  if (getAdConsent() === 'granted') {
+    loadAdSenseScript().then(() => renderAdUnit('adSlotFilter', ADSENSE_SLOTS.adSlotFilter));
+  }
   document.getElementById('filterBackdrop').classList.add('open');
   document.getElementById('openFilter').setAttribute('aria-expanded', 'true');
   document.getElementById('openFilterSidebar').setAttribute('aria-expanded', 'true');
@@ -3750,13 +3772,53 @@ function maybeShowCookieBanner() {
   showCookieBanner();
 }
 
-// TODO (kun AdSense-tili on hyväksytty ja mainosyksiköt luotu): lisää tähän AdSensen <script>-tagin
-// lisäys DOMiin ja (adsbygoogle = window.adsbygoogle || []).push({}) -kutsu KUMMALLEKIN mainospaikalle
-// (#adSlotList, #adSlotFilter), mutta VAIN jos getAdConsent() === 'granted'. Ei vielä toteutettu,
-// koska tiliä ei vielä ole hyväksytty eikä mainosyksiköiden slot-ID:itä ole.
+// AdSense-julkaisija ja mainosyksiköt. ADSENSE_SLOTS: containerId -> slot-ID. "filter" on vielä
+// null koska suodatinpaneelin mainosyksikköä ei ole vielä luotu AdSensessa - lisää slot-ID tähän
+// (merkkijonona, kuten listan) kun se on olemassa; se alkaa näkyä ilman muita koodimuutoksia.
+const ADSENSE_CLIENT = 'ca-pub-1115447221706239';
+const ADSENSE_SLOTS = {
+  adSlotList: '2148000151',    // "Listamainos"
+  adSlotFilter: '9675047091',  // "Suodattimien mainos"
+};
+
+let adSenseScriptPromise = null;
+function loadAdSenseScript() {
+  if (window.adsbygoogle || document.querySelector('script[src*="adsbygoogle.js"]')) return Promise.resolve();
+  if (adSenseScriptPromise) return adSenseScriptPromise;
+  adSenseScriptPromise = new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.async = true;
+    s.crossOrigin = 'anonymous';
+    s.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`;
+    // onerror (esim. mainostenesto-ohjelma) ei saa estää muuta sivua - jatketaan silti.
+    s.onload = resolve;
+    s.onerror = resolve;
+    document.head.appendChild(s);
+  });
+  return adSenseScriptPromise;
+}
+
+// Korvaa yhden mainospaikan placeholder-sisällön oikealla <ins class="adsbygoogle">-koodilla ja
+// pyytää AdSenseltä mainoksen (push). "Mainos"-otsikkolabel (.ad-slot-label) jätetään paikalleen.
+// Kutsutaan vain kerran per säiliö (dataset.adRendered-lipulla), ettei samaa yksikköä pyydetä
+// moneen kertaan jos loadAdsIfConsented ajetaan useasti (esim. hyväksyntä + sivun oma käynnistys).
+function renderAdUnit(containerId, slotId) {
+  if (!slotId) return; // ei vielä slot-ID:tä tälle paikalle
+  const container = document.getElementById(containerId);
+  const inner = container && container.querySelector('.ad-slot-inner');
+  if (!inner || container.dataset.adRendered) return;
+  container.dataset.adRendered = 'true';
+  container.hidden = false; // säiliö pitää olla näkyvissä ENNEN push():ia, muuten leveys on 0
+  inner.innerHTML = `<ins class="adsbygoogle" style="display:block;width:100%" data-ad-client="${ADSENSE_CLIENT}" data-ad-slot="${slotId}" data-ad-format="auto" data-full-width-responsive="true"></ins>`;
+  try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { console.error('AdSense-mainoksen pyyntö epäonnistui:', e); }
+}
+
+// Listamainos ladataan heti (säiliö on aina näkyvissä kun lista on auki). Suodatinmainos EI: sen
+// säiliö on piilossa (display:none) ennen kuin suodatinpaneeli avataan, ja AdSense ei osaa
+// mitoittaa mainosta nollaleveään säiliöön - se renderöidään erikseen openFilterPanelissa.
 function loadAdsIfConsented() {
   if (getAdConsent() !== 'granted') return;
-  // ei vielä mitään ladattavaa
+  loadAdSenseScript().then(() => renderAdUnit('adSlotList', ADSENSE_SLOTS.adSlotList));
 }
 
 document.getElementById('cookieAccept').onclick = () => {
