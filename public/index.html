@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Lounas - ravintolat ja lounaslistat kartalla</title>
+<!-- Favicon: sama lautaskuva kuin otsikon logossa (ei logotyyppiä mukana). Suhteelliset polut, jotta ne
+     toimivat sekä Firebase Hostingin juuressa että GitHub Pagesin alipolussa (.../lounas/). Nämä neljä
+     tiedostoa (favicon.ico, favicon-32x32.png, favicon-192x192.png, apple-touch-icon.png) pitää viedä
+     index.html:n KANSSA SAMAAN kansioon (public/) - ks. README/ohje julkaisusta. -->
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="favicon-32x32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon-192x192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -371,7 +379,13 @@
   /* Verkkosivusto + osoite samalla rivillä (sama kortissa ja alapaneelissa) */
   .info-links { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; font-size: 13.5px; }
   .info-links .website-link { margin-top: 0; }
-  .info-addr { color: #5b6a61; }
+  /* Osoite on linkki Google Mapsiin: ulkoasu ja kohdekoko kuten .website-link */
+  .info-addr {
+    display: inline-flex; align-items: center; min-height: 24px; /* 2.5.8 */
+    color: var(--link-blue); text-decoration: none;
+  }
+  .info-addr:active { opacity: 0.7; }
+  .info-addr .pin-icon { color: inherit; }
   .card .rating-row { margin: 3px 0 7px; } /* tähdet otsikon alla */
   .pin-icon {
     color: #5b6a61;
@@ -1737,8 +1751,20 @@ const sheetDrag = { active: false, mode: null, isMouse: false, fromBody: false, 
 // Tietojen yhteinen järjestys kortissa (lista/suosikit) ja kartan alapaneelissa:
 // otsikko, "Ei auki lounasaikaan" -varoitus (jos on), tähdet, tyyppi, [verkkosivusto + osoite samalla rivillä], lounaslista.
 // Verkkosivusto ja osoite ovat samalla rivillä (rivittyy kapealla); tyhjää riviä ei tehdä.
+// Google Maps -reittiohjeet ravintolan koordinaatteihin (ei osoitehaku): toimii KAIKILLE ravintoloille,
+// myös niille joilta puuttuu katuosoite OSM:ssä, ja osuu tarkalleen OSM:n merkitsemään pisteeseen riippumatta
+// siitä, onko ravintola itse Google Mapsissa. Maps URLs API: /maps/dir/?api=1&destination=lat,lon
+function mapsDirectionsUrl(lat, lon) {
+  return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(lat + ',' + lon);
+}
 function infoLinksHtml(r, cls) {
-  const addr = r.addr ? `<span class="info-addr">${ADDR_ICON} ${escapeHtml(r.addr)}</span>` : '';
+  // Linkin näkyvä teksti on osoite kun se tunnetaan, muuten yleisteksti - molemmat vievät samoihin
+  // koordinaatteihin. Saavutettavuus kuten verkkosivulinkissä (ks. websiteLinkHtml).
+  const hasCoords = typeof r.lat === 'number' && typeof r.lon === 'number';
+  const addrLabel = r.addr ? escapeHtml(r.addr) : 'Reittiohjeet';
+  const addr = hasCoords
+    ? `<a class="info-addr" data-fk="addr" href="${escapeHtml(mapsDirectionsUrl(r.lat, r.lon))}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${ADDR_ICON} ${addrLabel}<svg class="ext-link-icon" viewBox="0 0 24 24" width="11" height="11" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M14 4h6v6M20 4L10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/></svg><span class="visually-hidden"> (avautuu Google Maps -reittiohjeissa uudessa välilehdessä)</span></a>`
+    : '';
   const web = websiteLinkHtml(r);
   if (!web && !addr) return '';
   return `<div class="${cls}">${web}${addr}</div>`;
