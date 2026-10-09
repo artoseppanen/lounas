@@ -820,10 +820,9 @@
     display: block;
     text-align: center;
     padding: 10px 8px 18px;
-    font-size: 12px;
-    color: var(--muted);
+    font-size: 13.5px; /* leipätekstin koko (yleisin fonttikoko korteissa) */
   }
-  .list-footer-link a { color: var(--muted); text-decoration: underline; }
+  .list-footer-link a { color: var(--link-blue); text-decoration: none; }
   .ad-slot {
     margin: 14px 0 4px;
     padding: 4px;
@@ -1259,7 +1258,7 @@
           <span class="ad-slot-label">Mainos</span>
           <div class="ad-slot-inner"></div>
         </div>
-        <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietosuoja</a></p>
+        <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietoa palvelusta &amp; Tietosuoja</a></p>
       </div>
 
       <div id="favView" role="tabpanel" aria-labelledby="sbTabFav">
@@ -1272,7 +1271,7 @@
           <span class="ad-slot-label">Mainos</span>
           <div class="ad-slot-inner"></div>
         </div>
-        <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietosuoja</a></p>
+        <p class="list-footer-link"><a href="privacy.html" target="_blank" rel="noopener noreferrer">Tietoa palvelusta &amp; Tietosuoja</a></p>
       </div>
     </div>
   </div>
@@ -1822,6 +1821,7 @@ async function fetchOverpassWithMirrors(query) {
 // tulokset hylätään (stale), jotta hitaammin valmistuva vanha lataus ei korvaa uuden kaupungin dataa
 // eikä koske latausbanneriin.
 let regionLoadSeq = 0;
+let dataRegionId = null; // mikä kaupunki on viimeksi ladattu ja näkyy (ks. startWithRegion)
 
 async function loadAllRestaurantsOnce() {
   const region = currentRegion;
@@ -1830,6 +1830,7 @@ async function loadAllRestaurantsOnce() {
   const apply = (list, menus) => {
     restaurants = list;
     realDailyMenus = menus;
+    dataRegionId = region.id;
     rebuildMarkers();
     applyFiltersToMap();
     updateHeaderInfo();
@@ -3914,11 +3915,25 @@ function startWithRegion(id) {
   if (cityDialog.open) cityDialog.close();
   // Fokus valitsimeen: käyttäjä näkee/kuulee valitun kaupungin ja voi vaihtaa sen myöhemmin
   citySelect.focus();
-  loadAllRestaurantsOnce().then(() => {
+  const ready = () => {
     if (currentRegion === chosen && restaurants.length > 0) {
       announce(`Näytetään ${chosen.nameGen} ravintolat, ${restaurants.length} kpl`);
     }
-  });
+  };
+  if (dataRegionId === chosen.id) {
+    // Oikea kaupunki on jo ladattu taustalle (esim. Tampere) - ei turhaa uudelleenlatausta
+    ready();
+  } else {
+    // Väärä kaupunki näkyi taustalla: tyhjennetään se ennen uuden latausta
+    restaurants = [];
+    realDailyMenus = {};
+    rebuildMarkers();
+    updateHeaderInfo();
+    renderList();
+    renderFavorites();
+    updateFavTabLabel();
+    loadAllRestaurantsOnce().then(ready);
+  }
   maybeShowCookieBanner();
 }
 cityDialog.querySelectorAll('.city-choice').forEach((btn) => {
@@ -3933,18 +3948,17 @@ showTab('map');
 showSidebarTab('list');
 renderList();
 updateFavTabLabel();
-if (!regionPending) {
-  loadAllRestaurantsOnce();
-  maybeShowCookieBanner();
-} else if (typeof cityDialog.showModal === 'function') {
+// Kaupunkia ei vielä tiedetä: oletuskaupunki (Tampere) ladataan jo taustalle, jotta kartta ja lista
+// ovat valmiina kaupunkidialogin takana. Dialogi ei muutu - se vain peittää sisällön. Jos käyttäjä
+// valitsee toisen kaupungin, startWithRegion vaihtaa datan. Vanha ei-<dialog>-selain: ei jumiteta,
+// vaan käytetään oletuskaupunkia suoraan.
+if (regionPending && typeof cityDialog.showModal === 'function') {
   openCityDialog();
-} else {
-  // Hyvin vanha selain ilman <dialog>-tukea: ei jumiteta käyttäjää, vaan käytetään oletuskaupunkia
-  // (valitsin on silti näkyvissä otsikossa).
+} else if (regionPending) {
   regionPending = false;
-  loadAllRestaurantsOnce();
-  maybeShowCookieBanner();
 }
+loadAllRestaurantsOnce();
+if (!regionPending) maybeShowCookieBanner();
 </script>
 </body>
 </html>

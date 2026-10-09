@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tietosuojaseloste – Lounas</title>
+<title>Tietoa palvelusta ja tietosuoja – Lounas</title>
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="favicon-32x32.png" type="image/png" sizes="32x32">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,8 +31,10 @@
   main {
     max-width: 720px; margin: 0 auto; padding: 32px 20px 10px;
   }
-  h2 { font-size: 15px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); margin: 36px 0 10px; }
+  h2 { font-size: 22px; margin: 40px 0 12px; }
   h2:first-of-type { margin-top: 0; }
+  h3 { font-size: 15px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); margin: 26px 0 8px; }
+  section + section { border-top: 1px solid var(--line); margin-top: 32px; }
   p, li { font-size: 15.5px; line-height: 1.6; }
   ul { padding-left: 22px; margin: 8px 0; }
   a { color: var(--link-blue); }
@@ -42,7 +44,7 @@
 </head>
 <body>
 <header>
-  <a href="index.html">
+  <a href="./">
     <svg class="brand-logo" viewBox="0 0 72 48.4" width="30" height="20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <path fill="var(--accent)" d="M36.7,0.4C23.6,0.4,13,11,13,24.1c0,13.1,10.6,23.7,23.7,23.7c13.1,0,23.7-10.6,23.7-23.7
         C60.4,11,49.8,0.4,36.7,0.4 M36.7,42.9c-10.4,0-18.8-8.4-18.8-18.8c0-10.4,8.4-18.8,18.8-18.8c10.4,0,18.8,8.4,18.8,18.8
@@ -60,47 +62,64 @@
   </a>
 </header>
 <main>
-  <h2 style="margin-top:0; text-transform:none; letter-spacing:0; font-size:22px; color:var(--ink);">Tietosuojaseloste</h2>
   <p class="updated">Päivitetty 8.10.2026</p>
 
-  <p>Lounas on harrasteprojektina tehty web-sovellus, joka näyttää ravintoloita ja niiden päivän
-  lounaslistoja kartalla. Tämä seloste kertoo, mitä tietoja sovellus käsittelee ja miksi.</p>
+  <section id="tietoa-palvelusta" aria-labelledby="h-tietoa">
+    <h2 id="h-tietoa">Tietoa palvelusta</h2>
+    <p>Lounas on harrasteprojektina tehty web-sovellus, joka näyttää Tampereen ja Helsingin keskustan
+    ravintolat kartalla. Sovelluksesta löytyy:</p>
+    <ul>
+      <li>ravintolat kartalla ja listana, ja niiden päivän lounaslistat, kun ne ovat saatavilla</li>
+      <li>suodatus: avoinna nyt, ravintolatyyppi, ruokavalio (kasvis, vegaani) ja arvosana</li>
+      <li>suosikit, ja mahdollisuus antaa oma tähtiarvio</li>
+    </ul>
+    <h3>Mistä tiedot tulevat</h3>
+    <p>Ravintolat ja niiden sijainnit ja aukioloajat ovat peräisin <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer">OpenStreetMapista</a>.
+    Lounaslistat haetaan ravintoloiden omilta verkkosivuilta. Tieto voi olla vanhentunut tai puutteellinen, joten tarkista
+    ruokalista aina ravintolalta itseltään. Kaikilta ravintoloilta lounaslistaa ei ole saatavilla.</p>
+    <p>Tähtiarviot ovat käyttäjien antamia. Osalle Tampereen ravintoloista on lisätty alkuarvio, joka lasketaan mukaan
+    käyttäjäarvioihin.</p>
+    <h3>Yhteystiedot</h3>
+    <p>Kysymyksissä ja palautteessa voit ottaa yhteyttä: <a href="mailto:arto.seppanen@gmail.com">arto.seppanen@gmail.com</a>.
+    Lisää tietoa tekijästä: <a href="https://artoseppanen.github.io/" target="_blank" rel="noopener noreferrer">artoseppanen.github.io</a>.</p>
+  </section>
 
-  <h2>Mitä tietoja kerätään</h2>
-  <p>Sovellus toimii ilman kirjautumista. Taustalla käytetään Firebasen anonyymiä tunnistautumista,
-  jotta omat suosikit ja arviot voidaan tallentaa laitteesi/selaimesi mukaan. Tähän ei liity nimeä,
-  sähköpostia eikä muuta henkilöä suoraan tunnistavaa tietoa.</p>
-  <ul>
-    <li><strong>Suosikit ja arviot:</strong> tallennetaan Firebasen tietokantaan (Google Firestore) anonyymiin tunnukseen sidottuna.</li>
-    <li><strong>Valittu kaupunki ja evästesuostumus:</strong> tallennetaan selaimesi omaan muistiin (localStorage), ei lähetetä minnekään.</li>
-    <li><strong>Ravintoladata:</strong> haetaan OpenStreetMapista ja ravintoloiden omilta verkkosivuilta. Tätä dataa ei yhdistetä sinuun.</li>
-  </ul>
+  <section id="tietosuoja" aria-labelledby="h-tietosuoja">
+    <h2 id="h-tietosuoja">Tietosuoja</h2>
+    <p>Tämä osio kertoo, mitä tietoja sovellus käsittelee ja miksi.</p>
 
-  <h2>Evästeet ja mainonta</h2>
-  <p>Sovellus käyttää Google AdSense -mainontaa. Jos hyväksyt mainosevästeet sovelluksen kysyessä,
-  Google ja sen mainoskumppanit voivat asettaa evästeitä ja käsitellä laitetietoja mainosten
-  näyttämiseksi ja niiden tehon mittaamiseksi. Jos et hyväksy, mainoksia ei ladata eikä kyseisiä
-  evästeitä aseteta.</p>
-  <p>Voit lukea lisää siitä, miten Google käyttää tietoja, sen omasta selosteesta:
-  <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">Miten Google käyttää tietoja kumppaneiden sivustoilta</a>.</p>
+    <h3>Mitä tietoja kerätään</h3>
+    <p>Sovellus toimii ilman kirjautumista. Taustalla käytetään Firebasen anonyymiä tunnistautumista,
+    jotta omat suosikit ja arviot voidaan tallentaa laitteesi/selaimesi mukaan. Tähän ei liity nimeä,
+    sähköpostia eikä muuta henkilöä suoraan tunnistavaa tietoa.</p>
+    <ul>
+      <li><strong>Suosikit ja arviot:</strong> tallennetaan Firebasen tietokantaan (Google Firestore) anonyymiin tunnukseen sidottuna.</li>
+      <li><strong>Valittu kaupunki ja evästesuostumus:</strong> tallennetaan selaimesi omaan muistiin (localStorage), ei lähetetä minnekään.</li>
+      <li><strong>Ravintoladata:</strong> haetaan OpenStreetMapista ja ravintoloiden omilta verkkosivuilta. Tätä dataa ei yhdistetä sinuun.</li>
+    </ul>
 
-  <h2>Kolmannet osapuolet</h2>
-  <ul>
-    <li><strong>Google Firebase</strong> – tietokanta, anonyymi tunnistautuminen ja sovelluksen suojaus (App Check).</li>
-    <li><strong>Google AdSense</strong> – mainonta (vain evästeiden hyväksynnän jälkeen).</li>
-    <li><strong>OpenStreetMap</strong> – karttapohja ja ravintolatiedot.</li>
-  </ul>
+    <h3>Evästeet ja mainonta</h3>
+    <p>Sovellus käyttää Google AdSense -mainontaa. Jos hyväksyt mainosevästeet sovelluksen kysyessä,
+    Google ja sen mainoskumppanit voivat asettaa evästeitä ja käsitellä laitetietoja mainosten
+    näyttämiseksi ja niiden tehon mittaamiseksi. Jos et hyväksy, mainoksia ei ladata eikä kyseisiä
+    evästeitä aseteta.</p>
+    <p>Voit lukea lisää siitä, miten Google käyttää tietoja, sen omasta selosteesta:
+    <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">Miten Google käyttää tietoja kumppaneiden sivustoilta</a>.</p>
 
-  <h2>Tietojen säilytys ja poisto</h2>
-  <p>Suosikit ja arviot säilyvät niin kauan kuin selaimesi muistaa anonyymin tunnuksesi, tai kunnes
-  ne poistetaan tietokannasta. Voit tyhjentää selaimesi tallennetut tiedot selaimesi omista
-  asetuksista, jolloin uusi anonyymi tunnus luodaan seuraavalla käynnillä.</p>
+    <h3>Kolmannet osapuolet</h3>
+    <ul>
+      <li><strong>Google Firebase</strong> – tietokanta, anonyymi tunnistautuminen ja sovelluksen suojaus (App Check).</li>
+      <li><strong>Google AdSense</strong> – mainonta (vain evästeiden hyväksynnän jälkeen).</li>
+      <li><strong>OpenStreetMap</strong> – karttapohja ja ravintolatiedot.</li>
+    </ul>
 
-  <h2>Yhteystiedot</h2>
-  <p>Kysymyksissä voit ottaa yhteyttä: <a href="mailto:arto.seppanen@gmail.com">arto.seppanen@gmail.com</a>.</p>
-  <p>Lisää tietoa tekijästä: <a href="https://artoseppanen.github.io/" target="_blank" rel="noopener noreferrer">artoseppanen.github.io</a>.</p>
+    <h3>Tietojen säilytys ja poisto</h3>
+    <p>Suosikit ja arviot säilyvät niin kauan kuin selaimesi muistaa anonyymin tunnuksesi, tai kunnes
+    ne poistetaan tietokannasta. Voit tyhjentää selaimesi tallennetut tiedot selaimesi omista
+    asetuksista, jolloin uusi anonyymi tunnus luodaan seuraavalla käynnillä.</p>
+  </section>
 
-  <a class="back" href="index.html">← Takaisin sovellukseen</a>
+  <a class="back" href="./">← Takaisin sovellukseen</a>
 </main>
 </body>
 </html>
