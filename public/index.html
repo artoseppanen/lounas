@@ -760,6 +760,7 @@
   .m-sheet-body .hours { font-size: 15px; margin-top: 6px; }
   /* Lounaslista paneelissa: pelkkä sisältö valkoisella taustalla, ei haitaria */
   .lunch-plain { margin-top: 16px; }
+  .lunch-plain-title { margin: 0 0 6px; font-size: 15.5px; font-weight: 700; color: var(--ink); }
   .lunch-plain .lunch-prices { font-size: 15px; margin: 0 0 6px; }
   .lunch-plain .lunch-prices:empty { display: none; }
   .lunch-plain .lunch-group { margin-top: 12px; }
@@ -1261,8 +1262,8 @@
         <h2 class="visually-hidden">Ravintolat</h2>
         <div class="list-toolbar">
           <div class="search-wrap">
-            <label for="nameSearch" class="visually-hidden">Hae ravintolaa nimellä</label>
-            <input type="search" id="nameSearch" class="name-search" placeholder="Hae ravintolaa nimellä" autocomplete="off">
+            <label for="nameSearch" class="visually-hidden">Hae ravintolaa tai kahvilaa nimellä</label>
+            <input type="search" id="nameSearch" class="name-search" placeholder="Hae ravintolaa tai kahvilaa nimellä" autocomplete="off">
             <button type="button" class="search-clear" id="searchClear" aria-label="Tyhjennä haku">×</button>
             <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -1272,7 +1273,7 @@
           <div class="segment-row">
             <div class="segment">
               <button class="seg-btn active" id="filterVisible">Kartalla näkyvät <span id="visibleCount">(0)</span></button>
-              <button class="seg-btn" id="filterAll">Kaikki ravintolat</button>
+              <button class="seg-btn" id="filterAll">Kaikki paikat <span id="allCount">(0)</span></button>
             </div>
             <button class="filter-btn filter-btn-sidebar" id="openFilterSidebar" aria-haspopup="dialog" aria-expanded="false" aria-label="Suodata ravintoloita">
               <svg class="filter-icon" viewBox="0 0 24 24" width="14" height="14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -2559,7 +2560,7 @@ function scrollSelectedCardIntoView(flash) {
 }
 
 // Varmistaa että ravintola on listassa: tarvittaessa tyhjentää nimihaun,
-// siirtää karttaa sisäänpäin (reunalla oleva marker) tai vaihtaa "Kaikki ravintolat" -näkymään.
+// siirtää karttaa sisäänpäin (reunalla oleva marker) tai vaihtaa "Kaikki paikat" -näkymään.
 function ensureRestaurantInList(id) {
   if (findCardEl('listCards', id)) return;
   const r = restaurants.find(x => x.id === id);
@@ -3254,7 +3255,10 @@ function allergenBadges(codes) {
 // (esim. CSS text-overflow:ellipsis tai JS-katkaisu "..." -päätteellä) voi
 // säätää myöhemmin kun nähdään miltä oikea data näyttää käytännössä.
 function lunchPlainHtml(detailHtml) {
-  return `<div class="lunch-plain">${detailHtml}</div>`;
+  // Otsikko kertoo, että lista on tämän päivän lounas: haitarin teksti "Näytä päivän lounaslista" ei näy paneelissa.
+  // Näytetään vain kun lista on olemassa (lunchSummaryHtml palauttaa tyhjää arkipäivän ulkopuolella / epäonnistuneella jäsennyksellä).
+  // h3, koska paneelin ravintolan nimi on h2.
+  return `<div class="lunch-plain"><h3 class="lunch-plain-title">Tarjolla tänään:</h3>${detailHtml}</div>`;
 }
 function lunchToggleWrapper(summaryText, detailHtml, forceOpen = false) {
   const open = allLunchExpanded || forceOpen;
@@ -3488,7 +3492,7 @@ function visibleRestaurants() {
 
 function currentListRestaurants() {
   // Nimihaku etsii AINA kaikista ravintoloista riippumatta "Kartalla näkyvät"
-  // / "Kaikki ravintolat" -valinnasta — vain muut suodattimet (tyyppi,
+  // / "Kaikki paikat" -valinnasta — vain muut suodattimet (tyyppi,
   // arvosana, aukiolo) kunnioittavat edelleen sitä valintaa, kuten ennenkin.
   const base = nameQuery.length >= 2 ? restaurants : (listFilterMode === 'all' ? restaurants : visibleRestaurants());
   return base.filter(matchesFilters).sort((a, b) => {
@@ -3509,7 +3513,10 @@ function hasLunchToday(r) {
 }
 
 function updateHeaderInfo() {
+  // "Kartalla näkyvät": suodattimet + karttarajaus. "Kaikki paikat": vain suodattimet (sama matchesFilters,
+  // joten luku seuraa tyyppi-, arvosana-, aukiolo- ja nimihakusuodattimia).
   document.getElementById('visibleCount').textContent = `(${visibleRestaurants().length})`;
+  document.getElementById('allCount').textContent = `(${restaurants.filter(matchesFilters).length})`;
 }
 
 function updateFavTabLabel() {
@@ -3571,7 +3578,7 @@ function renderList() {
   const list = currentListRestaurants();
   const emptyHint = nameQuery.length >= 2
     ? `Ei hakutuloksia haulla "${escapeHtml(nameQuery)}".`
-    : 'Ei ravintoloita. Kokeile "Kaikki ravintolat" tai zoomaa ulos kartalla.';
+    : 'Ei ravintoloita. Kokeile "Kaikki paikat" tai zoomaa ulos kartalla.';
   el.innerHTML = list.length ? cardGroupsHtml(list) : `<p class="empty-hint">${emptyHint}</p>`;
   updateHeaderInfo();
   // Ankkurointi ensin: jos valittu kortti saatiin pysymään paikallaan, ei tarvita keskittävää vieritystä.
@@ -3605,7 +3612,7 @@ function markerComfortablyInView(r) {
 }
 function shouldRecenterMapForCard(r) {
   const listTabActive = document.getElementById('listView').classList.contains('d-active');
-  // Suosikit-välilehdeltä ja "Kaikki ravintolat" -tilasta valittaessa keskitys säilyy (lista ei piirry kartan mukana)
+  // Suosikit-välilehdeltä ja "Kaikki paikat" -tilasta valittaessa keskitys säilyy (lista ei piirry kartan mukana)
   if (listFilterMode === 'visible' && listTabActive && markerComfortablyInView(r)) return false;
   return true;
 }
