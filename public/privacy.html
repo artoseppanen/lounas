@@ -72,6 +72,7 @@
       <li>ravintolat kartalla ja listana, ja niiden päivän lounaslistat, kun ne ovat saatavilla</li>
       <li>suodatus: avoinna nyt, ravintolatyyppi, ruokavalio (kasvis, vegaani) ja arvosana</li>
       <li>suosikit, ja mahdollisuus antaa oma tähtiarvio</li>
+      <li>paikannus: oma sijaintisi kartalla Tampereella ja Helsingissä</li>
     </ul>
     <h3>Mistä tiedot tulevat</h3>
     <p>Ravintolat ja niiden sijainnit ja aukioloajat ovat peräisin <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener noreferrer">OpenStreetMapista</a>.
@@ -95,6 +96,7 @@
     <ul>
       <li><strong>Suosikit ja arviot:</strong> tallennetaan Firebasen tietokantaan (Google Firestore) anonyymiin tunnukseen sidottuna.</li>
       <li><strong>Valittu kaupunki ja evästesuostumus:</strong> tallennetaan selaimesi omaan muistiin (localStorage), ei lähetetä minnekään.</li>
+      <li><strong>Sijainti:</strong> jos painat kartan paikannuspainiketta, selain kysyy luvan sijaintiisi. Sijaintia käytetään vain kartan keskittämiseen ja sinisen pisteen näyttämiseen omalla laitteellasi. Sovellus ei tallenna sijaintia eikä lähetä sitä palvelimelle tai kolmansille osapuolille.</li>
       <li><strong>Ravintoladata:</strong> haetaan OpenStreetMapista ja ravintoloiden omilta verkkosivuilta. Tätä dataa ei yhdistetä sinuun.</li>
     </ul>
 

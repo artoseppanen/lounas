@@ -609,6 +609,33 @@
   /* ===== Mobiilin liukuva alapaneeli (Google Mapsin tyyliin, <990px) ===== */
   /* isolation: kartan sisäiset z-indeksit (zoom-painikkeet jne.) eivät nouse paneelin yli */
   #map { isolation: isolate; }
+  /* Paikannus-nappi kartalla (Leaflet-kontrolli, zoom-painikkeiden yläpuolella) */
+  .locate-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; padding: 0; border: none; border-radius: 2px;
+    background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .locate-btn:hover { background: #f4f4f4; }
+  .locate-btn:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
+  .locate-btn.busy { opacity: 0.6; cursor: progress; }
+  @media (prefers-reduced-motion: no-preference) {
+    .locate-btn.busy svg { animation: locatePulse 0.9s ease-in-out infinite; }
+    @keyframes locatePulse { 50% { opacity: 0.3; } }
+  }
+  /* Näkyvä ilmoitus kartan päällä (sama viesti kuulutetaan ruudunlukijalle announce():lla, joten tämä on aria-hidden) */
+  .map-toast {
+    position: absolute; z-index: 1100;
+    top: 12px; left: 56px; right: 56px; margin: 0 auto;
+    width: fit-content; max-width: calc(100% - 112px);
+    padding: 10px 14px; border-radius: 12px;
+    background: var(--ink); color: var(--paper);
+    font-size: 13.5px; line-height: 1.4; text-align: center;
+    box-shadow: 0 6px 20px rgba(28, 43, 36, 0.25);
+    opacity: 0; transform: translateY(-6px); pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+  }
+  .map-toast.visible { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .map-toast { transition: none; } }
   .marker-selected { filter: hue-rotate(180deg) saturate(1.8) brightness(1.08); }
   /* Valittu marker on myös ~20 % suurempi (1.4.1: ei vain väri). Kärki pysyy samassa pisteessä:
      ankkuri on alareunan keskellä, joten marginaalit skaalataan mukana. */
@@ -2833,6 +2860,114 @@ function getCommunityCount(id) {
 }
 
 const map = L.map('map', { zoomControl: false }).setView(currentRegion.center, currentRegion.zoom);
+
+// ---------------------------------------------------------------------------
+// Paikannus: nappi kartan vasemmassa yläkulmassa. Paikantaa vain Tampereella tai Helsingissä
+// (alueen rajat + 1 km marginaali); muualla ilmoitus. Lupa pyydetään selaimen omalla kyselyllä
+// vasta napin painalluksesta (ei omaa modaalia). Sijaintia ei tallenneta eikä lähetetä minnekään.
+// ---------------------------------------------------------------------------
+const LOCATE_MARGIN_M = 1000;  // alueen rajan marginaali metreinä
+const LOCATE_ZOOM = 16;        // sama kuin ravintolaa valittaessa (focusOnMap)
+let locateLayers = [];         // [tarkkuusympyrä?, sininen piste]
+let locating = false;
+let mapToastTimer = null;
+
+function regionContaining(lat, lon, marginM = LOCATE_MARGIN_M) {
+  const dLat = marginM / 111320;
+  for (const r of Object.values(REGIONS)) {
+    const b = r.bbox;
+    const dLon = marginM / (111320 * Math.cos(((b.s + b.n) / 2) * Math.PI / 180));
+    if (lat >= b.s - dLat && lat <= b.n + dLat && lon >= b.w - dLon && lon <= b.e + dLon) return r;
+  }
+  return null;
+}
+
+const mapToast = document.createElement('div');
+mapToast.className = 'map-toast';
+mapToast.setAttribute('aria-hidden', 'true');
+map.getContainer().appendChild(mapToast);
+function showMapToast(msg) {
+  mapToast.textContent = msg;
+  mapToast.classList.add('visible');
+  announce(msg);
+  clearTimeout(mapToastTimer);
+  mapToastTimer = setTimeout(() => mapToast.classList.remove('visible'), 8000);
+}
+
+function setLocating(on) {
+  locating = on;
+  const btn = document.getElementById('locateBtn');
+  if (!btn) return;
+  btn.classList.toggle('busy', on);
+  btn.setAttribute('aria-busy', on ? 'true' : 'false');
+  if (on) announce('Paikannetaan…');
+}
+
+function showMapLocation(lat, lon, accuracy) {
+  locateLayers.forEach((l) => map.removeLayer(l));
+  locateLayers = [];
+  const ll = [lat, lon];
+  const BLUE = '#1a73e8';
+  let circle = null;
+  if (accuracy > 0 && accuracy <= 1500) {
+    circle = L.circle(ll, { radius: accuracy, color: BLUE, weight: 1, fillColor: BLUE, fillOpacity: 0.12, interactive: false }).addTo(map);
+    locateLayers.push(circle);
+  }
+  locateLayers.push(L.circleMarker(ll, { radius: 8, color: '#ffffff', weight: 3, fillColor: BLUE, fillOpacity: 1, interactive: false }).addTo(map));
+  if (accuracy > 1500) {
+    map.setView(ll, 14);                                     // epätarkka (esim. IP-paikannus): ei zoomata sisään
+  } else if (circle && accuracy > 500) {
+    map.fitBounds(circle.getBounds(), { maxZoom: LOCATE_ZOOM, padding: [20, 20] });
+  } else {
+    map.setView(ll, LOCATE_ZOOM);
+  }
+}
+
+function onLocateSuccess(pos) {
+  setLocating(false);
+  const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+  const region = regionContaining(lat, lon);
+  if (!region) {
+    showMapToast('Sovellus näyttää ravintolat Tampereella ja Helsingissä.');
+    return;
+  }
+  if (region !== currentRegion) switchRegion(region.id); // oikea kaupunki ensin, jotta piste ei jää alueen ulkopuolelle
+  showMapLocation(lat, lon, accuracy);
+  showMapToast(accuracy > 1500 ? 'Sijainti on epätarkka.' : 'Sijaintisi on merkitty kartalle.');
+}
+
+function onLocateError(err) {
+  setLocating(false);
+  showMapToast(err && err.code === 1
+    ? 'Sijainti on estetty. Salli paikannus selaimen asetuksista ja yritä uudelleen.'
+    : 'Sijaintia ei saatu. Yritä uudelleen.');
+}
+
+function locateMe() {
+  if (locating) return;
+  if (!('geolocation' in navigator)) { showMapToast('Selain ei tue paikannusta.'); return; }
+  setLocating(true);
+  // maximumAge 0: aina tuore sijainti. Nappi on "päivitä sijaintini" - välimuistista palautettu vanha sijainti ei päivittäisi mitään.
+  navigator.geolocation.getCurrentPosition(onLocateSuccess, onLocateError, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+}
+
+const LocateControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd() {
+    const bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    const btn = L.DomUtil.create('button', 'locate-btn', bar);
+    btn.type = 'button';
+    btn.id = 'locateBtn';
+    btn.title = 'Paikanna minut';
+    btn.setAttribute('aria-label', 'Paikanna minut kartalla');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
+    L.DomEvent.disableClickPropagation(bar);
+    btn.addEventListener('click', locateMe);
+    return bar;
+  },
+});
+new LocateControl().addTo(map); // lisätään ENNEN zoom-kontrollia: samassa kulmassa ensin lisätty on ylimpänä
+
 // 3.1.2 / 2.4.6: Leafletin oletusnimet ("Zoom in") ovat englantia suomenkielisellä sivulla
 L.control.zoom({ zoomInTitle: 'Lähennä karttaa', zoomOutTitle: 'Loitonna karttaa' }).addTo(map);
 map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
