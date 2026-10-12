@@ -636,10 +636,13 @@
   }
   .map-toast.visible { opacity: 1; transform: none; }
   @media (prefers-reduced-motion: reduce) { .map-toast { transition: none; } }
-  .marker-selected { filter: hue-rotate(180deg) saturate(1.8) brightness(1.08); }
-  /* Valittu marker on myös ~20 % suurempi (1.4.1: ei vain väri). Kärki pysyy samassa pisteessä:
-     ankkuri on alareunan keskellä, joten marginaalit skaalataan mukana. */
-  .leaflet-marker-icon.marker-selected { width: 31px !important; height: 50px !important; margin-left: -15px !important; margin-top: -50px !important; }
+  /* Valittu marker: turkoosi pinni (#14a098) muuttuu sovelluksen oranssiksi (mitattu: noin rgb(243,141,37)).
+     Suodatin on viritetty turkoosille - vanha hue-rotate(180deg) oli tehty Leafletin oletussinistä ja
+     antaisi turkoosista punaisen. Valkoinen haarukka ja veitsi pysyvät valkoisina. */
+  .marker-selected { filter: hue-rotate(222deg) saturate(1.1) brightness(1.2); }
+  /* Valittu marker on myös 25 % suurempi (1.4.1: ei vain väri). Kärki pysyy samassa pisteessä:
+     ankkuri (14,35) skaalataan mukana: 28x37 -> 35x46, marginaalit -17.5 / -43.75. */
+  .leaflet-marker-icon.marker-selected { width: 35px !important; height: 46px !important; margin-left: -17.5px !important; margin-top: -43.75px !important; }
   .m-sheet {
     position: fixed;
     left: 0;
@@ -2677,7 +2680,7 @@ function rebuildMarkers() {
   for (const k in markers) delete markers[k];
   restaurants.forEach(r => {
     // alt = ravintolan nimi: Leafletin oletus "Marker" olisi kaikilla sama (4.1.2 / 2.4.6)
-    const marker = L.marker([r.lat, r.lon], { alt: r.name });
+    const marker = L.marker([r.lat, r.lon], { alt: r.name, icon: RESTAURANT_PIN });
     // Ei popupia: mobiilissa avautuu alapaneeli, työpöydällä valitaan ravintola
     // (oranssi marker + kortin korostus sivupalkissa), ks. onMarkerClick.
     marker.on('click', () => onMarkerClick(r.id));
@@ -2861,6 +2864,24 @@ function getCommunityCount(id) {
 
 const map = L.map('map', { zoomControl: false }).setView(currentRegion.center, currentRegion.zoom);
 
+// Ravintolamarkerin ikoni: litteä turkoosi (logon #14a098) pisara, valkoinen reunus ja valkoinen
+// haarukka + veitsi. SVG data-URI:na, joten erillisiä kuvatiedostoja (eikä Leafletin oletuskuvia
+// CDN:stä) ei tarvita. Pysyy <img>-elementtinä, jotta alt-teksti, tabindex ja role=button säilyvät.
+// Koko 28x37, kärki (ankkuri) kohdassa 14,35. Valitun markerin oranssi tehdään CSS-suodattimella
+// (.marker-selected), ks. tyylit.
+const PIN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 42" width="28" height="37">'
+  + '<ellipse cx="16" cy="40.4" rx="5.5" ry="1.4" fill="#000" opacity=".16"/>'
+  + '<path d="M16 39.5C16 39.5 3.6 26.6 3.6 16A12.4 12.4 0 0 1 28.4 16C28.4 26.6 16 39.5 16 39.5Z" fill="#14a098" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>'
+  + '<g fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M10.6 8.6v4.3a2.6 2.6 0 0 0 5.2 0V8.6M13.2 8.6v14.6"/><path d="M21.4 16.4v6.8"/></g>'
+  + '<path d="M21.4 8.6c-2.3 1.1-3.6 3.4-3.6 6.2 0 .9.7 1.6 1.6 1.6h2z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>'
+  + '</svg>';
+const RESTAURANT_PIN = L.icon({
+  iconUrl: 'data:image/svg+xml;utf8,' + encodeURIComponent(PIN_SVG),
+  iconSize: [28, 37],
+  iconAnchor: [14, 35],
+});
+
 // ---------------------------------------------------------------------------
 // Paikannus: nappi kartan vasemmassa yläkulmassa. Paikantaa vain Tampereella tai Helsingissä
 // (alueen rajat + 1 km marginaali); muualla ilmoitus. Lupa pyydetään selaimen omalla kyselyllä
@@ -2928,7 +2949,7 @@ function onLocateSuccess(pos) {
   const { latitude: lat, longitude: lon, accuracy } = pos.coords;
   const region = regionContaining(lat, lon);
   if (!region) {
-    showMapToast('Sovellus näyttää ravintolat Tampereella ja Helsingissä.');
+    showMapToast('Sovellus näyttää ravintolat Tampereella ja Helsingissä. Paikannuksen mukaan et ole kummassakaan näistä.');
     return;
   }
   if (region !== currentRegion) switchRegion(region.id); // oikea kaupunki ensin, jotta piste ei jää alueen ulkopuolelle
